@@ -1,0 +1,36 @@
+[tool.poetry]
+name = "py-agent"
+version = "0.1.0"
+description = "A Python agent framework that enables function-calling through LLM code generation"
+authors = ["Ram <codercat@163.com>" , "Cooper <cooperimmaculate@gmail.com>"]
+readme = "README.md"
+license = "MIT"
+homepage = "https://github.com/codercat/py-agent"
+repository = "https://github.com/codercat/py-agent"
+documentation = "https://github.com/codercat/py-agent#readme"
+keywords = ["llm", "agent", "code-generation", "function-calling"]
+classifiers = [
+    "Development Status :: 4 - Beta",
+    "Intended Audience :: Developers",
+    "License :: OSI Approved :: MIT License",
+    "Programming Language :: Python :: 3",
+    "Programming Language :: Python :: 3.10",
+    "Topic :: Software Development :: Libraries :: Python Modules",
+]
+packages = [
+    { include = "py_agent", from = "src" }
+]
+
+[tool.poetry.dependencies]
+python = ">=3.10,<3.13"
+ipython = "^8.31.0"
+openai = "^1.59.3"
+rich = "^13.9.4"
+
+
+[tool.poetry.group.dev.dependencies]
+pytest = "^8.3.4"
+
+[build-system]
+requires = ["poetry-core"]
+build-backend = "poetry.core.masonry.api"
