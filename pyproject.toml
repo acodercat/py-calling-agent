@@ -1,5 +1,5 @@
 [tool.poetry]
-name = "py-agent"
+name = "llm-py-agent"
 version = "0.1.0"
 description = "A Python agent framework that enables function-calling through LLM code generation"
 authors = ["Ram <codercat@163.com>" , "Cooper <cooperimmaculate@gmail.com>"]

@@ -4,7 +4,7 @@ PyAgent is a tool-augmented agent framework that enables function-calling throug
 
 [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](https://opensource.org/licenses/MIT)
 [![Python 3.10+](https://img.shields.io/badge/python-3.10+-blue.svg)](https://www.python.org/downloads/)
-[![PyPI version](https://badge.fury.io/py/py-agent.svg)](https://badge.fury.io/py/py-agent)
+[![PyPI version](https://badge.fury.io/py/llm-py-agent.svg)](https://badge.fury.io/py/llm-py-agent)
 
 ## Features
 
@@ -27,7 +27,7 @@ We're actively working on expanding PyAgent's capabilities, including:
 
 ### From PyPI (Recommended)
 ```bash
-pip install py-agent
+pip install llm-py-agent
 ```
 
 ### From Source
