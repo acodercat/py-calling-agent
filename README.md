@@ -25,8 +25,17 @@ We're actively working on expanding PyAgent's capabilities, including:
 
 ## Installation
 
+### From PyPI (Recommended)
 ```bash
-poetry install
+pip install py-agent
+```
+
+### From Source
+```bash
+# Clone the repository
+git clone https://github.com/acodercat/PyAgent.git
+cd py-agent
+# Or install in development mode with pip
 pip install -e .
 ```
 

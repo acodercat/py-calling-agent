@@ -5,9 +5,9 @@ description = "A Python agent framework that enables function-calling through LL
 authors = ["Ram <codercat@163.com>" , "Cooper <cooperimmaculate@gmail.com>"]
 readme = "README.md"
 license = "MIT"
-homepage = "https://github.com/codercat/py-agent"
-repository = "https://github.com/codercat/py-agent"
-documentation = "https://github.com/codercat/py-agent#readme"
+homepage = "https://github.com/acodercat/PyAgent"
+repository = "https://github.com/acodercat/PyAgent"
+documentation = "https://github.com/acodercat/PyAgent#readme"
 keywords = ["llm", "agent", "code-generation", "function-calling"]
 classifiers = [
     "Development Status :: 4 - Beta",
