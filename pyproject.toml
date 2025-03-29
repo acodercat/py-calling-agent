@@ -1,6 +1,6 @@
 [project]
 name = "py-calling-agent"
-version = "0.2.0"
+version = "0.2.2"
 description = "A Python agent framework that enables function-calling through LLM code generation"
 readme = "README.md"
 authors = [
@@ -13,6 +13,19 @@ dependencies = [
     "openai>=1.69.0",
     "rich>=13.9.4",
 ]
+keywords = ["llm", "agent", "function-calling"]
+classifiers = [
+    "Development Status :: 3 - Alpha",
+    "Intended Audience :: Developers",
+    "License :: OSI Approved :: MIT License",
+    "Programming Language :: Python :: 3.11",
+    "Programming Language :: Python :: 3.12",
+    "Topic :: Software Development :: Libraries :: Python Modules",
+]
+
+[project.urls]
+Homepage = "https://github.com/acodercat/py-calling-agent"
+Repository = "https://github.com/acodercat/py-calling-agent"
 
 [build-system]
 requires = ["hatchling"]
