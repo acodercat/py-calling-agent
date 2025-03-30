@@ -130,10 +130,12 @@ object_descriptions = {
         'example': 'filtered = processor.filter_numbers(numbers, 5)'
     },
     'processed_data': {
-        'description': 'Store processed data here'
+        'description': 'You have to store processed data in this variable',
+        'example': 'processed_data = processor.process_list(numbers)'
     },
     'filtered_data': {
-        'description': 'Store filtered data here'
+        'description': 'You have to store filtered data in this variable',
+        'example': 'filtered_data = processor.filter_numbers(numbers, 5)'
     }
 }
 

@@ -21,10 +21,12 @@ def object_descriptions():
             'example': 'print(numbers)'
         },
         'sorted_numbers': {
-            'description': 'Store the sorted numbers here',
+            'description': 'You have to store the sorted numbers in this variable',
+            'example': 'sorted_numbers = sorted(numbers)'
         },
         'sum_result': {
-            'description': 'Store the sum of numbers here',
+            'description': 'You have to store the sum of numbers in this variable',
+            'example': 'sum_result = sum(numbers)'
         }
     }
 
@@ -39,7 +41,7 @@ def state_agent(llm_engine, objects, object_descriptions):
 def test_sort_numbers(state_agent):
     state_agent.run("Sort the numbers list")
     sorted_result = state_agent.get_object('sorted_numbers')
-    assert sorted(sorted_result) == sorted([1, 1, 2, 3, 4, 5, 5, 6, 9])
+    assert sorted_result == sorted([1, 1, 2, 3, 4, 5, 5, 6, 9])
 
 def test_calculate_sum(state_agent):
     state_agent.run("Calculate the sum of all numbers")
