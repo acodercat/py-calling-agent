@@ -46,17 +46,19 @@ objects = {
 object_descriptions = {
     'processor': {
         'description': 'Data processing tool with various methods',
-        'example': 'result = processor.process_list(numbers)'
+        'example': 'processed_data = processor.process_list(numbers)'
     },
     'numbers': {
         'description': 'Input list of numbers',
-        'example': 'filtered = processor.filter_numbers(numbers, 5)'
+        'example': 'filtered_data = processor.filter_numbers(numbers, 5)'
     },
     'processed_data': {
-        'description': 'Store processed data here'
+        'description': 'Store processed data here',
+        'example': 'processed_data = processor.process_list(numbers)'
     },
     'filtered_data': {
-        'description': 'Store filtered data here'
+        'description': 'Store filtered data here',
+        'example': 'filtered_data = processor.filter_numbers(numbers, 5)'
     }
 }
 

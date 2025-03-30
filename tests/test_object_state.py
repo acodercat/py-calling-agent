@@ -21,11 +21,11 @@ def object_descriptions():
             'example': 'print(numbers)'
         },
         'sorted_numbers': {
-            'description': 'You have to store the sorted numbers in this variable',
+            'description': 'Store the sorted numbers in this variable',
             'example': 'sorted_numbers = sorted(numbers)'
         },
         'sum_result': {
-            'description': 'You have to store the sum of numbers in this variable',
+            'description': 'Store the sum of numbers in this variable',
             'example': 'sum_result = sum(numbers)'
         }
     }

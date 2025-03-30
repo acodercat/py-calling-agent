@@ -46,18 +46,18 @@ def object_descriptions():
     return {
         'processor': {
             'description': 'Data processing tool with various methods',
-            'example': 'result = processor.process_list(numbers)'
+            'example': 'processed_data = processor.process_list(numbers)'
         },
         'numbers': {
             'description': 'Input list of numbers',
-            'example': 'filtered = processor.filter_numbers(numbers, 5)'
+            'example': 'filtered_data = processor.filter_numbers(numbers, 5)'
         },
         'processed_data': {
-            'description': 'You have to store processed data in this variable',
+            'description': 'Store processed data in this variable',
             'example': 'processed_data = processor.process_list(numbers)'
         },
         'filtered_data': {
-            'description': 'You have to store filtered data in this variable',
+            'description': 'Store filtered data in this variable',
             'example': 'filtered_data = processor.filter_numbers(numbers, 5)'
         }
     }

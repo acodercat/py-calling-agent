@@ -22,10 +22,12 @@ object_descriptions = {
         'example': 'print(numbers)'
     },
     'sorted_numbers': {
-        'description': 'Store the sorted numbers here',
+        'description': 'Store the sorted numbers in this variable',
+        'example': 'sorted_numbers = sorted(numbers)'
     },
     'sum_result': {
-        'description': 'Store the sum of numbers here',
+        'description': 'Store the sum of numbers in this variable',
+        'example': 'sum_result = sum(numbers)'
     }
 }
 

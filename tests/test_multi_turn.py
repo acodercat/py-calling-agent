@@ -38,7 +38,8 @@ def multi_turn_agent(llm_engine, analyzer, numbers):
             'example': 'print(numbers)'
         },
         'stats': {
-            'description': 'Store analysis results here'
+            'description': 'Store analysis results here',
+            'example': 'stats = analyzer.analyze(numbers)'
         }
     }
     

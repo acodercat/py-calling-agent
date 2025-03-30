@@ -54,7 +54,8 @@ object_descriptions = {
         'example': 'print(numbers)'
     },
     'stats': {
-        'description': 'Store analysis results here'
+        'description': 'Store analysis results here',
+        'example': 'stats = analyzer.analyze(numbers)'
     }
 }
 

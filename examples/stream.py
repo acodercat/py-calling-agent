@@ -38,7 +38,8 @@ object_descriptions = {
         'example': 'print(numbers)  # Access the list directly'
     },
     'result': {
-        'description': 'Store the result of the processing in this variable.'
+        'description': 'Store the result of the processing in this variable.',
+        'example': 'result = processor.process([3, 1, 4])'
     }
 }
 
