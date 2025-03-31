@@ -54,17 +54,7 @@ class StreamingParserState:
 
 
 def process_streaming_text(chunk: str, state: StreamingParserState) -> Tuple[List[Dict[str, str]], StreamingParserState]:
-    """
-    Process streaming text to identify Python code blocks.
-    
-    Args:
-        chunk: Current chunk of text being processed
-        state: State from previous call
-        
-    Returns:
-        tuple: (events, new_state) where events is a list of event dictionaries
-               and new_state is the updated state for the next call
-    """
+    """Process streaming text to identify Python code blocks."""
     
     events = []
     

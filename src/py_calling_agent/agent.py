@@ -95,23 +95,12 @@ class Logger:
     """
 
     def __init__(self, level: LogLevel = LogLevel.INFO):
-        """Initialize logger with specified verbosity level.
-
-        Args:
-            level: Minimum log level to display. Defaults to INFO.
-        """
+        """Initialize logger with specified verbosity level."""
         self.console = Console()
         self.level = level
 
     def __log(self, title: str, content: str = None, style: str = None, level: LogLevel = LogLevel.INFO):
-        """Internal method to handle log message formatting and display.
-
-        Args:
-            title: Section title for the log message
-            content: Main message content
-            style: Rich text style (color/formatting)
-            level: Message's log level
-        """
+        """Internal method to handle log message formatting and display."""
         if level <= self.level:
             panel = Panel(content, title=title, style=style)
             self.console.print(panel)
@@ -168,20 +157,7 @@ class SystemPromptFormatter:
         additional_context: str,
         examples: str,
     ):
-        """Initialize the formatter with runtime environment information.
-
-        Args:
-            system_prompt_template: Template string with {functions}, {objects}, {libraries} placeholders
-            object_descriptions: Metadata describing each object's purpose and usage
-            functions: List of available functions in the runtime
-            objects: Dictionary of available objects in the runtime
-            libraries: List of available Python libraries
-            role_definition: Role definition for the agent
-            instructions: Instructions for the agent
-            current_time: Current time
-            additional_context: Additional context for the agent
-            examples: Examples for the agent
-        """
+        """Initialize the formatter with runtime environment information."""
         self.system_prompt_template = system_prompt_template
         self.object_descriptions = object_descriptions
         self.functions = functions
@@ -254,11 +230,6 @@ class ResponseChunk:
     """Represents a parsed chunk from the LLM streaming response."""
     
     def __init__(self, type, content):
-        """
-        Args:
-            type (ChunkType): Type of the chunk (TEXT, CODE, COMPLETE)
-            content (str): Content of the chunk
-        """
         self.type = type
         self.content = content
 
@@ -398,15 +369,9 @@ class PyCallingAgent:
             self.messages.append(AssistantMessage(response))
         else:
             self.logger.debug("LLM Response", response, "magenta")
+            self.messages.append(CodeExecutionMessage(response))
             
         return code_snippet
-
-    def _update_message_history(self, llm_response: str, execution_result: str):
-        """Update message history with code execution and results."""
-        self.messages.extend([
-            CodeExecutionMessage(llm_response),
-            ExecutionResultMessage(self.next_step_prompt_template.format(execution_result=execution_result))
-        ])
 
     def _handle_max_steps(self):
         """Handle the case when maximum steps are reached."""
@@ -425,25 +390,17 @@ class PyCallingAgent:
         if self.__state == AgentState.COMPLETED:
             return initial_response
         
-        # Phase 2: Execute code and update message history
-        execution_result = self._execute_code(code_snippet)
+        # Phase 2: Execute code
         try:
             execution_result = self._execute_code(code_snippet)
         except Exception as e:
             execution_result = str(e)
-        
-        self._update_message_history(initial_response, execution_result)
 
-        # Phase 3: Get next step response and check if it's final
-        next_step_response = self.llm_engine(self._prepare_messages_for_llm())
-        code_snippet = self._process_llm_response(next_step_response)
-        
-        if self.__state == AgentState.COMPLETED:
-            return next_step_response
+        self.messages.append(ExecutionResultMessage(execution_result))
         
         return None  # Continue to next step
 
-    def _stream_step(self) -> Generator[Tuple[Event, bool], None, None]:
+    def _stream_step(self) -> Generator[Optional[Event], None, None]:
         """Execute a streaming step and yield events with a flag indicating completion."""
         # Phase 1: Get initial LLM response and stream events
         initial_response = None
@@ -467,38 +424,15 @@ class PyCallingAgent:
             execution_result = self._execute_code(code_snippet)
             yield Event(EventType.EXECUTION_RESULT, execution_result or "No output")
         except Exception as e:
-            yield Event(EventType.EXECUTION_ERROR, str(e))  
-        
-        # Update message history
-        self._update_message_history(initial_response, execution_result)
-        
-        # Phase 3: Get next step response and stream events
-        next_step_response = None
-        for chunk in self._stream_llm_parsed_chunks():
-            if chunk.type == ChunkType.CODE:
-                yield Event(EventType.CODE, chunk.content)
-            elif chunk.type == ChunkType.TEXT:
-                yield Event(EventType.TEXT, chunk.content)
-            elif chunk.type == ChunkType.COMPLETE:
-                next_step_response = chunk.content
-        
-        # Check if it's a final response
-        code_snippet = self._process_llm_response(next_step_response)
-        if self.__state == AgentState.COMPLETED:
-            yield Event(EventType.FINAL_RESPONSE, next_step_response)
-            return
+            execution_result = str(e)
+            yield Event(EventType.EXECUTION_ERROR, execution_result)  
+
+        self.messages.append(ExecutionResultMessage(execution_result))
         
         yield None  # Continue to next step
 
     def _stream_llm_parsed_chunks(self):
-        """Stream parsed chunks from LLM response.
-        
-        Parses the raw LLM streaming response into well-defined chunk objects
-        that can be processed further.
-        
-        Yields:
-            ResponseChunk: Parsed chunk objects with types TEXT, CODE, or COMPLETE
-        """
+        """Stream parsed chunks from LLM response."""
         parser_state = StreamingParserState()
         raw_chunks = []
         
@@ -554,12 +488,5 @@ class PyCallingAgent:
             raise Exception(error_msg)
 
     def get_object(self, name: str) -> Any:
-        """Get an object from the agent's runtime environment.
-        
-        Args:
-            name (str): The name of the object to retrieve
-            
-        Returns:
-            Any: The object if found, or None if not found
-        """
+        """Get an object from the agent's runtime environment."""
         return self.python_runtime.get_from_namespace(name)

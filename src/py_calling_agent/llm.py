@@ -9,26 +9,12 @@ class LLMEngine(ABC):
     
     @abstractmethod
     def __call__(self, messages: List[Dict[str, str]]) -> str:
-        """Generate response from message history.
-        
-        Args:
-            messages: List of message dictionaries with 'role' and 'content'
-        
-        Returns:
-            Generated response text
-        """
+        """Generate response from message history."""
         pass
     
     @abstractmethod
     def stream(self, messages: List[Dict[str, str]]) -> Iterator[str]:
-        """Stream response tokens from message history.
-        
-        Args:
-            messages: List of message dictionaries with 'role' and 'content'
-        
-        Yields:
-            str: Generated response text tokens as they arrive
-        """
+        """Stream response tokens from message history."""
         pass
 
 class OpenAILLMEngine(LLMEngine):
@@ -73,15 +59,7 @@ class OpenAILLMEngine(LLMEngine):
     
 
     def _prepare_openai_params(self, messages: List[Dict[str, str]]) -> Dict[str, Any]:
-        """
-        Prepare parameters for OpenAI API call, including only non-None values.
-        
-        Args:
-            messages: Conversation history as list of message dicts
-            
-        Returns:
-            Dictionary of parameters to pass to the OpenAI API
-        """
+        """Prepare parameters for OpenAI API call, including only non-None values."""
         # Start with required parameters
         params = {
             "model": self.model,
@@ -99,15 +77,7 @@ class OpenAILLMEngine(LLMEngine):
         return params
 
     def __call__(self, messages: List[Dict[str, str]]) -> str:
-        """
-        Generate response using OpenAI API.
-        
-        Args:
-            messages: Conversation history as list of message dicts
-        
-        Returns:
-            Generated response content
-        """
+        """Generate response using OpenAI API."""
         response = self.client.chat.completions.create(
             **self._prepare_openai_params(messages),
             stream=False
@@ -115,14 +85,7 @@ class OpenAILLMEngine(LLMEngine):
         return response.choices[0].message.content
     
     def stream(self, messages: List[Dict[str, str]]) -> Iterator[str]:
-        """Stream response tokens using OpenAI API.
-        
-        Args:
-            messages: Conversation history as list of message dicts
-
-        Yields:
-            str: Generated response text tokens as they arrive
-        """
+        """Stream response tokens using OpenAI API."""
         response = self.client.chat.completions.create(
             **self._prepare_openai_params(messages),
             stream=True

@@ -1,10 +1,10 @@
 [project]
 name = "py-calling-agent"
-version = "0.2.2"
+version = "0.2.3"
 description = "A Python agent framework that enables function-calling through LLM code generation"
 readme = "README.md"
 authors = [
-    { name = "Maohao", email = "codermao@gmail.com" },
+    { name = "Ram", email = "codermao@gmail.com" },
     { name = "Cooper", email = "cooperimmaculate@gmail.com" }
 ]
 requires-python = ">=3.11"
