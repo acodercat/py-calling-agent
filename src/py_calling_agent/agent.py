@@ -1,15 +1,14 @@
-from py_calling_agent.prompts import DEFAULT_SYSTEM_PROMPT, DEFAULT_NEXT_STEP_PROMPT, DEFAULT_INSTRUCTIONS, DEFAULT_ROLE_DEFINITION, DEFAULT_EXAMPLES
-from py_calling_agent.python_runtime import PythonRuntime
-from typing import Callable, Optional, List, Dict, Any, Generator, Tuple
-from py_calling_agent.llm import LLMEngine
+from .prompts import DEFAULT_SYSTEM_PROMPT, NEXT_STEP_PROMPT, DEFAULT_INSTRUCTIONS, DEFAULT_ROLE_DEFINITION, DEFAULT_ADDITIONAL_CONTEXT
+from .python_runtime import PythonRuntime
+from typing import List, Dict, Any, AsyncGenerator
+from .models import Model
 from rich.console import Console
-from rich.panel import Panel
-from rich.syntax import Syntax
-from py_calling_agent.utils import extract_python_code, process_streaming_text, StreamingParserState
-import inspect
+from rich.text import Text
+from rich.style import Style
+from .utils import extract_python_code
+from .streaming_text_parser import SegmentType, StreamingTextParser
 from enum import Enum, IntEnum
 from datetime import datetime
-
 class MessageRole(str, Enum):
     SYSTEM = "system"
     USER = "user"
@@ -17,43 +16,45 @@ class MessageRole(str, Enum):
     CODE_EXECUTION = "code_execution"
     EXECUTION_RESULT = "execution_result"
 
-class Message:
+
+role_conversions = {
+    MessageRole.CODE_EXECUTION: MessageRole.ASSISTANT,
+    MessageRole.EXECUTION_RESULT: MessageRole.USER,
+}
+
+class Message():
     """Base class for all message types in the agent conversation."""
-    def __init__(self, content: str):
+    def __init__(self, content: str, role: MessageRole):
         self.content = content
+        self.role = role
         
     def to_dict(self) -> Dict[str, str]:
-        """Convert message to dictionary format for LLM API."""
-        raise NotImplementedError("Subclasses must implement to_dict()")
-
+        return {"role": self.role, "content": self.content}
+    
 class SystemMessage(Message):
     """System message that provides instructions to the LLM."""
-    def to_dict(self) -> Dict[str, str]:
-        return {"role": MessageRole.SYSTEM, "content": self.content}
-
+    def __init__(self, content: str):
+        super().__init__(content, MessageRole.SYSTEM)
 
 class UserMessage(Message):
     """Message from the user to the agent."""
-    def to_dict(self) -> Dict[str, str]:
-        return {"role": MessageRole.USER, "content": self.content}
-
+    def __init__(self, content: str):
+        super().__init__(content, MessageRole.USER)
 class AssistantMessage(Message):
-    """Message from the assistant (LLM) to the user."""
-    def to_dict(self) -> Dict[str, str]:
-        return {"role": MessageRole.ASSISTANT, "content": self.content}
 
+    """Message from the assistant (LLM) to the user."""
+    def __init__(self, content: str):
+        super().__init__(content, MessageRole.ASSISTANT)
 
 class CodeExecutionMessage(Message):
     """Message representing code to be executed by the agent."""
-    def to_dict(self) -> Dict[str, str]:
-        return {"role": MessageRole.CODE_EXECUTION, "content": self.content}
-
+    def __init__(self, content: str):
+        super().__init__(content, MessageRole.CODE_EXECUTION)
 
 class ExecutionResultMessage(Message):
     """Message representing the result from code execution."""
-    def to_dict(self) -> Dict[str, str]:
-        return {"role": MessageRole.EXECUTION_RESULT, "content": self.content}
-
+    def __init__(self, content: str):
+        super().__init__(content, MessageRole.EXECUTION_RESULT)
 
 class LogLevel(IntEnum):
     """Log levels for controlling output verbosity."""
@@ -67,19 +68,7 @@ class EventType(Enum):
     EXECUTION_RESULT = "execution_result"
     EXECUTION_ERROR = "execution_error"
     FINAL_RESPONSE = "final_response"
-
-class Event:
-    def __init__(self, type: EventType, content: str):
-        self.type = type
-        self.content = content
-
-class AgentState(IntEnum):
-    """Agent state enumeration."""
-    INITIALIZED = 0
-    RUNNING = 1
-    COMPLETED = 2
-    ERROR = 3
-    MAX_STEPS_REACHED = 4
+    MAX_STEPS_REACHED = "max_steps_reached"
 
 class Logger:
     """
@@ -98,395 +87,374 @@ class Logger:
         """Initialize logger with specified verbosity level."""
         self.console = Console()
         self.level = level
-
-    def __log(self, title: str, content: str = None, style: str = None, level: LogLevel = LogLevel.INFO):
-        """Internal method to handle log message formatting and display."""
-        if level <= self.level:
-            panel = Panel(content, title=title, style=style)
-            self.console.print(panel)
-
-    def debug(self, title: str, message: str, style: str = "yellow"):
-        self.__log(title, message, style, LogLevel.DEBUG)
-
-    def info(self, title: str, message: str, style: str = "blue"):
-        self.__log(title, message, style, LogLevel.INFO)
-
-    def error(self, title: str, message: str, style: str = "red"):
-        self.__log(title, message, style, LogLevel.ERROR)
-
-
-class SystemPromptFormatter:
-    """
-    Formats the system prompt by injecting descriptions of available functions, objects, and libraries.
-    
-    This formatter structures information about the Python runtime environment into a format
-    that helps the LLM understand what tools and capabilities are available for use.
-
-    Key responsibilities:
-    - Format function descriptions with signatures and docstrings
-    - Format object descriptions with types, metadata, and examples
-    - Format available library information
-    - Include role definition, instructions, and additional context
-    
-    Example:
-        >>> formatter = SystemPromptFormatter(
-        ...     system_prompt_template="Functions:\n{functions}\nObjects:\n{objects}\nLibraries:\n{libraries}",
-        ...     object_descriptions={
-        ...         'data': {'description': 'Input data', 'example': 'print(data)'}
-        ...     },
-        ...     functions=[sort_list],
-        ...     objects={'data': [3,1,4]},
-        ...     libraries=['numpy', 'pandas'],
-        ...     role_definition="You are a data analyst",
-        ...     instructions="Analyze the data",
-        ...     current_time="2023-05-01 12:00:00",
-        ...     additional_context="This is a test"
-        ... )
-        >>> formatted_prompt = formatter.format()
-    """
-
-    def __init__(self, 
-        system_prompt_template: str, 
-        object_descriptions: Dict[str, Dict[str, str]], 
-        functions: List[Callable], 
-        objects: Dict[str, Any], 
-        libraries: List[str],
-        role_definition: str,
-        current_time: str,
-        instructions: str,
-        additional_context: str,
-        examples: str,
-    ):
-        """Initialize the formatter with runtime environment information."""
-        self.system_prompt_template = system_prompt_template
-        self.object_descriptions = object_descriptions
-        self.functions = functions
-        self.objects = objects
-        self.libraries = libraries
-        self.role_definition = role_definition
-        self.instructions = instructions
-        self.additional_context = additional_context
-        self.current_time = current_time
-        self.examples = examples
-    
-    def format(self) -> str:
-        """Format system prompt with functions, objects and libraries descriptions."""
-        functions_description = self._format_functions()
-        objects_description = self._format_objects()
-        libraries_description = self._format_libraries()
-        return self.system_prompt_template.format(
-            functions=functions_description, 
-            objects=objects_description,
-            libraries=libraries_description,
-            role_definition=self.role_definition,
-            instructions=self.instructions,
-            current_time=self.current_time,
-            additional_context=self.additional_context,
-            examples=self.examples
-        )
-    
-    def _format_functions(self) -> str:
-        """Format description of functions with signatures and docstrings."""
-        descriptions = [
-            f"Function: {func.__name__}{inspect.signature(func)}\n"
-            f"Description: {func.__doc__ or f'Function {func.__name__}'}"
-            for func in self.functions
-        ]
-        return "\n".join(descriptions) if descriptions else "No functions available"
-    
-    def _format_objects(self) -> str:
-        """Format description of objects with their metadata."""
-        descriptions = []
+        self.level_styles = {
+            LogLevel.DEBUG: Style(color="yellow", bold=False),
+            LogLevel.INFO: Style(color="bright_blue", bold=False),
+            LogLevel.ERROR: Style(color="bright_red", bold=True)
+        }
         
-        for name, value in self.objects.items():
-            object_info = [f"- {name} ({type(value).__name__}):"]
+        self.level_prefix = {
+            LogLevel.DEBUG: "DEBUG",
+            LogLevel.INFO: "INFO",
+            LogLevel.ERROR: "ERROR"
+        }
+    
+    def __log(self, title: str, content: Any, style: str, level: LogLevel = LogLevel.INFO):
+        if level <= self.level:
+            # Create composite log message with improved formatting
+            message = Text()
+
+            # Add log level indicator
+            message.append(f"[{self.level_prefix[level]}] ", self.level_styles[level])
             
-            if meta := self.object_descriptions.get(name, {}):
-                if desc := meta.get("description"):
-                    object_info.append(f"  Description: {desc}")
-                if example := meta.get("example"): 
-                    object_info.append(f"  Example usage: {example}")
-                    
-            if hasattr(value, "__doc__") and value.__doc__ and value.__doc__.strip():
-                doc = value.__doc__.strip()
-                object_info.append(f"  Documentation: {doc}")
-                
-            descriptions.append("\n".join(object_info))
+            style = Style.parse(style)
+            message.append(f"{title}: \n", style)
+            
+            message.append(content, style)
 
-        return "\n".join(descriptions) if descriptions else "No objects available"
-    
-    def _format_libraries(self) -> str:
-        """Format description of libraries."""
-        return "\n".join(self.libraries) if self.libraries else "No libraries available"
+            self.console.print(message)
 
-class ChunkType(Enum):
-    """Types of chunks that can be parsed from LLM streaming response."""
-    
-    TEXT = "text"
-    CODE = "code"
-    COMPLETE = "complete"
+    def debug(self, title: str, content: Any, style: str = "yellow"):
+        self.__log(title, content, style, LogLevel.DEBUG)
 
-class ResponseChunk:
-    """Represents a parsed chunk from the LLM streaming response."""
+    def info(self, title: str, content: Any, style: str = "blue"):
+        self.__log(title, content, style, LogLevel.INFO)
+
+    def error(self, title: str, content: Any, style: str = "red"):
+        self.__log(title, content, style, LogLevel.ERROR)
+
+class ContextState(IntEnum):
+    """Execution context state enumeration."""
+    INITIALIZED = 0
+    RUNNING = 1
+    COMPLETED = 2
+    MAX_STEPS_REACHED = 3
+
+class ExecutionContext:
+    """Manages execution state with max steps limit."""
     
-    def __init__(self, type, content):
+    def __init__(self, max_steps: int = 10):
+        self.max_steps = max_steps
+        self.total_steps = 0
+        self.state = ContextState.INITIALIZED
+    
+    def start(self) -> None:
+        """Initialize execution context."""
+        self.total_steps = 0
+        self.state = ContextState.RUNNING
+    
+    def next_step(self) -> bool:
+        """Record a step execution. Returns False if max steps reached."""
+        if self.total_steps >= self.max_steps:
+            self.state = ContextState.MAX_STEPS_REACHED
+            return False
+        
+        self.total_steps += 1
+        return True
+    
+    def complete(self) -> None:
+        """Mark execution as completed successfully."""
+        self.state = ContextState.COMPLETED
+    
+    @property
+    def is_running(self) -> bool:
+        return self.state == ContextState.RUNNING
+    
+class ExecutionStatus(Enum):
+    """Status of agent execution."""
+    SUCCESS = "success"
+    MAX_STEPS_REACHED = "max_steps_reached"
+
+class Event:
+    def __init__(self, type: EventType, content: str):
         self.type = type
         self.content = content
 
+class AgentResponse:
+    """Response from the agent."""
+    
+    def __init__(
+        self,
+        content: str,
+        status: ExecutionStatus,
+        steps_taken: int = 0,
+        max_steps: int = 0,
+    ):
+        self.content = content
+        self.status = status
+        self.steps_taken = steps_taken
+        self.max_steps = max_steps
+    
+    def __str__(self) -> str:
+        """String representation of the response."""
+        return f"AgentResponse(status={self.status.value}, steps={self.steps_taken}/{self.max_steps}, content={self.content})"
+
 class PyCallingAgent:
     """
-    A tool-augmented agent framework that enables function-calling through LLM code generation.
+    A tool-augmented agent that enables function-calling through LLM code generation.
     
-    Unlike traditional JSON-schema approaches, Agent leverages LLM's coding capabilities 
-    to interact with tools through a Python runtime environment. It follows an 
-    observation-planning-action pattern and allows object injection and retrieval.
+    Instead of JSON schemas, this agent generates Python code to interact with tools
+    in a controlled runtime environment. It maintains state across conversations and
+    supports streaming responses.
 
-    Key features:
-    - Code-based function calling instead of JSON schemas
-    - Direct Python object injection into runtime
-    - Multi-turn conversation with observation feedback
-    - Runtime state management and result retrieval
-    - Dynamic system prompt management with customizable sections
-    
+    Args:
+        model (Model): LLM model instance implementing the Model interface.
+            Supports OpenAIServerModel, LiteLLMModel, or custom implementations.
+        system_prompt_template (str, optional): Template string for system prompt.
+            Uses placeholders for runtime context. Defaults to DEFAULT_SYSTEM_PROMPT.
+        max_steps (int, optional): Maximum execution steps before stopping.
+            Prevents infinite loops. Defaults to 5.
+        log_level (LogLevel, optional): Logging verbosity level.
+            Options: ERROR (0), INFO (1), DEBUG (2). Defaults to DEBUG.
+        agent_role (str, optional): Role definition and capabilities description.
+            Informs the LLM about the agent's purpose. Defaults to DEFAULT_ROLE_DEFINITION.
+        instructions (str, optional): Execution instructions for the agent.
+            Guides how the agent should process requests. Defaults to DEFAULT_INSTRUCTIONS.
+        additional_context (str, optional): Additional context and usage examples.
+            Helps the LLM understand available tools. Defaults to DEFAULT_ADDITIONAL_CONTEXT.
+        runtime (PythonRuntime, optional): Python runtime with functions and variables.
+            If None, creates an empty runtime. Defaults to None.
+        messages (List[Message], optional): Initial conversation history.
+            List of Message objects to start with. Defaults to empty list.
+        max_history (int, optional): Maximum message history to retain.
+            Prevents memory bloat in long conversations. Defaults to 10.
+
     Example:
-        >>> # Define a tool and data to process
-        >>> def sort_list(data: list) -> list:
-        ...     '''Sort a list of numbers'''
-        ...     return sorted(data)
-        ...
-        >>> numbers = [3, 1, 4]
+        >>> def add(a: int, b: int) -> int:
+        ...     return a + b
         >>> 
-        >>> # Create agent with injected function and object
         >>> agent = PyCallingAgent(
-        ...     llm_engine,
-        ...     functions=[sort_list],
-        ...     objects={'numbers': numbers},
-        ...     object_descriptions={
-        ...         'numbers': {
-        ...             'description': 'Input list to sort',
-        ...             'example': 'result = sort_list(numbers)'
-        ...         },
-        ...         'sorted_result': {
-        ...             'description': 'Store the result of the sorting in this object.'
-        ...         }
-        ...     }
+        ...     model=llm_model,
+        ...     runtime=PythonRuntime(functions=[Function(add)])
         ... )
         >>> 
-        >>> # Run task and get sorted_result from runtime
-        >>> agent.run("Sort the numbers and store as 'sorted_result'")
-        >>> result = agent.get_object('sorted_result')
+        >>> result = await agent.run("Add 5 and 3")
+        >>> print(result)  # "The sum is: 8"
     """
 
     def __init__(
         self,
-        llm_engine: LLMEngine,
+        model: Model,
         system_prompt_template: str = DEFAULT_SYSTEM_PROMPT,
-        functions: List[Callable] = [],
-        libraries: List[str] = [],
-        objects: Dict[str, Any] = {},
-        object_descriptions: Dict[str, Dict[str, str]] = None,
         max_steps: int = 5,
         log_level: LogLevel = LogLevel.DEBUG,
-        next_step_prompt_template: str = DEFAULT_NEXT_STEP_PROMPT,
-        initial_code: str = None,
         agent_role: str = DEFAULT_ROLE_DEFINITION,
-        task_instructions: str = DEFAULT_INSTRUCTIONS,
-        additional_context: str = None,
-        examples: str = DEFAULT_EXAMPLES,
+        instructions: str = DEFAULT_INSTRUCTIONS,
+        additional_context: str = DEFAULT_ADDITIONAL_CONTEXT,
+        runtime: PythonRuntime = None,
+        messages: List[Message] = [],
+        max_history: int = 10
     ):
-        """Initialize a new Agent instance."""
-        self.llm_engine = llm_engine
+        """Initialize PyCallingAgent with improved parameter handling."""
+        self.model = model
         self.system_prompt_template = system_prompt_template
-        self.next_step_prompt_template = next_step_prompt_template
-        self.python_runtime = PythonRuntime(functions, objects)
-        if initial_code:
-            self.python_runtime.run(initial_code)
         self.max_steps = max_steps
-        
-        self.system_prompt_formatter = SystemPromptFormatter(
-            system_prompt_template=self.system_prompt_template, 
-            object_descriptions=object_descriptions, 
-            functions=functions, 
-            objects=objects, 
-            libraries=libraries, 
-            role_definition=agent_role, 
-            instructions=task_instructions, 
-            current_time=datetime.now().strftime("%Y-%m-%d %H:%M:%S"),
-            additional_context=additional_context,
-            examples=examples
-        )
-        self.system_prompt = self.system_prompt_formatter.format()
-        
-        self.messages = [SystemMessage(self.system_prompt)]
-        
-        self.__state = AgentState.INITIALIZED
+        self.runtime = runtime if runtime else PythonRuntime()
+        self.agent_role = agent_role
+        self.instructions = instructions
+        self.additional_context = additional_context
+        self.messages = messages.copy()
+        self.max_history = max_history
         self.logger = Logger(log_level)
-    
-    def run(self, query: str) -> str:
+
+    def build_system_prompt(self) -> str:
+        """Build and format the system prompt with current runtime state."""
+        return self.system_prompt_template.format(
+            functions=self.runtime.describe_functions(), 
+            variables=self.runtime.describe_variables(), 
+            role_definition=self.agent_role,
+            instructions=self.instructions,
+            current_time=datetime.now().strftime("%Y-%m-%d %H:%M:%S"),
+            additional_context=self.additional_context,
+        )
+
+    async def run(self, query: str) -> AgentResponse:
         """Execute the agent with the given user query."""
+        context = ExecutionContext(self.max_steps)
+        context.start()
         self._initialize_conversation(query)
-        
-        for step in range(self.max_steps):
-            self.logger.debug(f"Step {step + 1}/{self.max_steps}", "Processing...", "yellow")
-            result = self._execute_step()
-            if result:
-                return result
-        
-        return self._handle_max_steps()
 
-    def stream(self, query: str) -> Generator[Event, None, None]:
-        """Stream events during agent execution."""
-        self._initialize_conversation(query)
-        
-        for step in range(self.max_steps):
-            self.logger.debug(f"Step {step + 1}/{self.max_steps}", "Processing...", "yellow")
+        while context.is_running:
+            # Check if we can proceed to next step
+            if not context.next_step():
+                # Max steps reached
+                self.logger.info("Max steps reached", f"Completed {context.total_steps}/{context.max_steps} steps")
+                return AgentResponse(
+                    content='',
+                    status=ExecutionStatus.MAX_STEPS_REACHED,
+                    steps_taken=context.total_steps,
+                    max_steps=self.max_steps
+                )
             
-            for event in self._stream_step():
-                if event:  # Filter out None events
-                    yield event
-                if self.__state == AgentState.COMPLETED:
-                    return
+            response = await self._execute_step(context)
+            
+            if not context.is_running:
+                return AgentResponse(
+                    content=response,
+                    status=ExecutionStatus.SUCCESS,
+                    steps_taken=context.total_steps,
+                    max_steps=self.max_steps
+                )
+
+    async def stream_events(self, query: str) -> AsyncGenerator[Event, None]:
+        """Stream events during agent execution."""
+        context = ExecutionContext(self.max_steps)
+        context.start()
+        self._initialize_conversation(query)
         
-        # Handle reaching max steps
-        final_response = self._handle_max_steps()
-        yield Event(EventType.FINAL_RESPONSE, final_response)
-    
-    def get_messages(self) -> List[Message]:
-        """Get the message history."""
-        return self.messages
+        while context.is_running:
+            # Check if we can proceed to next step
+            if not context.next_step():
+                # Max steps reached
+                self.logger.info("Max steps reached", f"Completed {context.total_steps}/{context.max_steps} steps")
+                yield Event(EventType.MAX_STEPS_REACHED, "Max steps reached")
+                return
+            
+            async for event in self._stream_step_execution(context):
+                yield event
+                
+                if not context.is_running:
+                    return
 
-    def get_state(self) -> AgentState:
-        """Get the current state of the agent."""
-        return self.__state
+    async def _execute_step(self, context: ExecutionContext) -> str:
+        """Execute a single step and return result."""
+        self._log_step(context)
+        
+        # Get LLM response
+        model_response = await self.model.call(self._prepare_messages())
+            
+        # Process response
+        return await self._process_model_response(model_response, context)
 
-    def _process_llm_response(self, response: str):
-        """Process an LLM response and determine if it contains executable code."""
-        code_snippet = extract_python_code(response)
+    async def _stream_step_execution(self, context: ExecutionContext) -> AsyncGenerator[Event, None]:
+        """Execute a single step with streaming output."""
+        self._log_step(context)
+        
+        # Stream LLM response and collect
+        chunks = []
+        parser = StreamingTextParser()
+        
+        async for chunk in self.model.stream(self._prepare_messages()):
+            chunks.append(chunk)
+            
+            # Parse and yield streaming events
+            parsed_segments = parser.process_chunk(chunk)
+            for segment in parsed_segments:
+                if segment.type == SegmentType.TEXT:
+                    yield Event(EventType.TEXT, segment.content)
+                elif segment.type == SegmentType.CODE:
+                    yield Event(EventType.CODE, segment.content)
+        
+        model_response = "".join(chunks)
+        # Process complete response
+        async for event in self._process_model_response_streaming(model_response, context):
+            yield event
+
+    async def _process_model_response(self, model_response: str, context: ExecutionContext) -> str:
+        """Process model response and execute code if needed."""
+        code_snippet = extract_python_code(model_response)
         
         if not code_snippet:
-            self.logger.debug("Final Response", response, "green")
-            self.__state = AgentState.COMPLETED
-            self.messages.append(AssistantMessage(response))
-        else:
-            self.logger.debug("LLM Response", response, "magenta")
-            self.messages.append(CodeExecutionMessage(response))
+            # Final response without code
+            self.add_message(AssistantMessage(model_response))
+            context.complete()
+            return model_response
+        
+        self.add_message(CodeExecutionMessage(model_response))
             
-        return code_snippet
-
-    def _handle_max_steps(self):
-        """Handle the case when maximum steps are reached."""
-        final_response = f"Max steps ({self.max_steps}) reached. Last response: {self.messages[-1].content}"
-        self.logger.debug("Warning", final_response, "red")
-        self.__state = AgentState.MAX_STEPS_REACHED
-        self.messages.append(AssistantMessage(final_response))
-        return final_response
-
-    def _execute_step(self) -> Optional[str]:
-        """Execute a single step of the workflow and return final response if complete."""
-        # Phase 1: Get LLM response and check if it's a final response
-        initial_response = self.llm_engine(self._prepare_messages_for_llm())
-        code_snippet = self._process_llm_response(initial_response)
-        
-        if self.__state == AgentState.COMPLETED:
-            return initial_response
-        
-        # Phase 2: Execute code
         try:
-            execution_result = self._execute_code(code_snippet)
+            execution_result = await self.runtime.execute(code_snippet)
+            self.logger.debug("Code executed", execution_result, "cyan")
+            
+            next_prompt = NEXT_STEP_PROMPT.format(execution_result=execution_result)
+            self.add_message(ExecutionResultMessage(next_prompt))
+            
+            return model_response
         except Exception as e:
-            execution_result = str(e)
+            error_msg = str(e)
+            self.logger.debug("Code execution error", error_msg)
+            retry_prompt = f"Error: {error_msg}\nPlease fix the code and try again."
+            self.add_message(ExecutionResultMessage(retry_prompt))
 
-        self.messages.append(ExecutionResultMessage(execution_result))
-        
-        return None  # Continue to next step
+            return f"Execution failed: {error_msg}"
 
-    def _stream_step(self) -> Generator[Optional[Event], None, None]:
-        """Execute a streaming step and yield events with a flag indicating completion."""
-        # Phase 1: Get initial LLM response and stream events
-        initial_response = None
-        for chunk in self._stream_llm_parsed_chunks():
-            if chunk.type == ChunkType.CODE:
-                yield Event(EventType.CODE, chunk.content)
-            elif chunk.type == ChunkType.TEXT:
-                yield Event(EventType.TEXT, chunk.content)
-            elif chunk.type == ChunkType.COMPLETE:
-                initial_response = chunk.content
+    async def _process_model_response_streaming(self, model_response: str, 
+                                            context: ExecutionContext) -> AsyncGenerator[Event, None]:
+        """Process model response with streaming events."""
+        code_snippet = extract_python_code(model_response)
         
-        # Process the complete response
-        code_snippet = self._process_llm_response(initial_response)
-        
-        if self.__state == AgentState.COMPLETED:
-            yield Event(EventType.FINAL_RESPONSE, initial_response)
+        if not code_snippet:
+            # Final response without code
+            self.add_message(AssistantMessage(model_response))
+            context.complete()
+            yield Event(EventType.FINAL_RESPONSE, model_response)
             return
         
-        # Phase 2: Execute code and stream results
+        self.add_message(CodeExecutionMessage(model_response))
+
         try:
-            execution_result = self._execute_code(code_snippet)
-            yield Event(EventType.EXECUTION_RESULT, execution_result or "No output")
+            execution_result = await self.runtime.execute(code_snippet)
+            self.logger.debug("Code executed", execution_result, "cyan")
+            
+            next_prompt = NEXT_STEP_PROMPT.format(execution_result=execution_result)
+            self.add_message(ExecutionResultMessage(next_prompt))
+
+            yield Event(EventType.EXECUTION_RESULT, execution_result)
         except Exception as e:
-            execution_result = str(e)
-            yield Event(EventType.EXECUTION_ERROR, execution_result)  
+            context.complete()
+            error_msg = str(e)
+            self.logger.debug("Code execution error", error_msg)
+            retry_prompt = f"Error: {error_msg}\nPlease fix the code and try again."
+            self.add_message(ExecutionResultMessage(retry_prompt))
 
-        self.messages.append(ExecutionResultMessage(execution_result))
+            yield Event(EventType.EXECUTION_ERROR, error_msg)
+
+    def _log_step(self, context: ExecutionContext) -> None:
+        """Log step execution info."""
+        self.logger.debug(
+            f"Step {context.total_steps}/{context.max_steps}", 
+            f"Processing...", 
+            "yellow"
+        )
+
+    def _initialize_conversation(self, user_query: str) -> None:
+        """Initialize the conversation with the user prompt and system prompt."""
+        self._update_system_message()
+        self.logger.debug("User query received", user_query, "blue")
+        self.add_message(UserMessage(user_query))
+
+
+    def _update_system_message(self) -> None:
+        """Update or insert system message."""
+
+        system_prompt = self.build_system_prompt()
+
+        if self.messages and isinstance(self.messages[0], SystemMessage):
+            self.messages[0] = SystemMessage(system_prompt)
+        else:
+            self.messages.insert(0, SystemMessage(system_prompt))
         
-        yield None  # Continue to next step
+        self.logger.debug("System prompt loaded", system_prompt, "blue")
 
-    def _stream_llm_parsed_chunks(self):
-        """Stream parsed chunks from LLM response."""
-        parser_state = StreamingParserState()
-        raw_chunks = []
-        
-        for raw_chunk in self.llm_engine.stream(self._prepare_messages_for_llm()):
-            raw_chunks.append(raw_chunk)
-
-            parsed_data, parser_state = process_streaming_text(raw_chunk, parser_state)
-            for item in parsed_data:
-                if item["type"] == "text":
-                    yield ResponseChunk(ChunkType.TEXT, item["content"])
-                elif item["type"] == "code":
-                    yield ResponseChunk(ChunkType.CODE, item["content"])                    
-        # Yield the complete response as final chunk
-        yield ResponseChunk(ChunkType.COMPLETE, "".join(raw_chunks))
-
-    def _prepare_messages_for_llm(self):
+    def _prepare_messages(self) -> List[Dict[str, str]]:
         """Convert internal message objects to dict format for LLM API."""
-        converted_messages = []
-        
-        for message in self.messages:
-            match message:
-                case SystemMessage():
-                    role = "system"
-                case AssistantMessage():
-                    role = "assistant"
-                case UserMessage() | CodeExecutionMessage() | ExecutionResultMessage():
-                    role = "user"
-                case _:
-                    continue
-                    
-            converted_messages.append({"role": role, "content": message.content})
-                
-        return converted_messages
-
-    def _initialize_conversation(self, query: str):
-        """Initialize the conversation with the user prompt."""
-        self.__state = AgentState.RUNNING
-        self.logger.debug("System Prompt", self.system_prompt, "blue")
-        self.logger.debug("User query", query, "blue")
-        self.messages.append(UserMessage(query))
-
-    def _execute_code(self, code_snippet: str) -> str:
-        """Execute code and handle errors."""
-        self.logger.debug("Executing Code", Syntax(code_snippet, "python", theme="monokai"))
-        
-        try:
-            result = self.python_runtime.run(code_snippet)
-            self.logger.debug("Execution Result", result or "No output", "cyan")
-            return result
-        except Exception as e:
-            error_msg = f"Error executing code: {str(e)}"
-            self.logger.error("Execution Error", error_msg)
-            raise Exception(error_msg)
-
-    def get_object(self, name: str) -> Any:
-        """Get an object from the agent's runtime environment."""
-        return self.python_runtime.get_from_namespace(name)
+        return [
+            {
+                "role": role_conversions.get(message.role, message.role).value,
+                "content": message.content
+            }
+            for message in self.messages
+        ]
+    
+    def add_message(self, message: Message) -> None:
+        """Add message with automatic history management."""
+        self.messages.append(message)
+        self._trim_history()
+    
+    def _trim_history(self) -> None:
+        """Trim message history if needed."""
+        if len(self.messages) > self.max_history:
+            # Keep system message at index 0 and recent history
+            system_msg = self.messages[0]  # Always SystemMessage at index 0
+            recent_msgs = self.messages[-(self.max_history - 1):]
+            self.messages = [system_msg] + recent_msgs

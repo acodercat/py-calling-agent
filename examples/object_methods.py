@@ -1,9 +1,12 @@
-from py_calling_agent import PyCallingAgent, OpenAILLMEngine
+from py_calling_agent import PyCallingAgent
+from py_calling_agent.models import OpenAIServerModel
+from py_calling_agent.python_runtime import PythonRuntime, Variable
 from dataclasses import dataclass
 import os
+import asyncio
 
 # Initialize LLM engine
-llm_engine = OpenAILLMEngine(
+model = OpenAIServerModel(
     model_id=os.getenv("LLM_MODEL_ID"),
     api_key=os.getenv("LLM_API_KEY"),
     base_url=os.getenv("LLM_BASE_URL")
@@ -32,49 +35,51 @@ class DataProcessor:
         """Filter numbers greater than threshold"""
         return [x for x in data if x > threshold]
 
-# Prepare context
-processor = DataProcessor()
-numbers = [3, 1, 4, 1, 5, 9, 2, 6, 5]
+async def main():
+    # Prepare context
+    processor = DataProcessor()
+    numbers = [3, 1, 4, 1, 5, 9, 2, 6, 5]
 
-objects = {
-    'processor': processor,
-    'numbers': numbers,
-    'processed_data': None,
-    'filtered_data': None
-}
+    # Create Variable objects
+    processor_var = Variable(
+        name="processor",
+        value=processor,
+        description="Data processing tool with various methods\nusage: processed_data = processor.process_list(numbers)"
+    )
+    
+    numbers_var = Variable(
+        name="numbers",
+        value=numbers,
+        description="Input list of numbers\nusage: filtered_data = processor.filter_numbers(numbers, 5)"
+    )
+    
+    processed_data_var = Variable(
+        name="processed_data",
+        description="Store processed data here\nusage: processed_data = processor.process_list(numbers)"
+    )
+    
+    filtered_data_var = Variable(
+        name="filtered_data",
+        description="Store filtered data here\nusage: filtered_data = processor.filter_numbers(numbers, 5)"
+    )
 
-object_descriptions = {
-    'processor': {
-        'description': 'Data processing tool with various methods',
-        'example': 'processed_data = processor.process_list(numbers)'
-    },
-    'numbers': {
-        'description': 'Input list of numbers',
-        'example': 'filtered_data = processor.filter_numbers(numbers, 5)'
-    },
-    'processed_data': {
-        'description': 'Store processed data here',
-        'example': 'processed_data = processor.process_list(numbers)'
-    },
-    'filtered_data': {
-        'description': 'Store filtered data here',
-        'example': 'filtered_data = processor.filter_numbers(numbers, 5)'
-    }
-}
+    # Create runtime
+    runtime = PythonRuntime(
+        variables=[processor_var, numbers_var, processed_data_var, filtered_data_var]
+    )
 
-# Create agent
-agent = PyCallingAgent(
-    llm_engine,
-    objects=objects,
-    object_descriptions=object_descriptions
-)
+    # Create agent
+    agent = PyCallingAgent(model, runtime=runtime)
 
-# Process data
-agent.run("Use processor to sort and deduplicate numbers")
-processed_data = agent.get_object('processed_data')
-print("Processed data:", processed_data)
+    # Process data
+    await agent.run("Use processor to sort and deduplicate numbers")
+    processed_data = agent.runtime.get_variable_value('processed_data')
+    print("Processed data:", processed_data)
 
-# Filter data
-agent.run("Filter numbers greater than 4")
-filtered_data = agent.get_object('filtered_data')
-print("Filtered data:", filtered_data)
+    # Filter data
+    await agent.run("Filter numbers greater than 4")
+    filtered_data = agent.runtime.get_variable_value('filtered_data')
+    print("Filtered data:", filtered_data)
+
+if __name__ == "__main__":
+    asyncio.run(main())

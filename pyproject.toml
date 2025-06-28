@@ -1,6 +1,6 @@
 [project]
 name = "py-calling-agent"
-version = "0.2.3"
+version = "0.3.0"
 description = "A Python agent framework that enables function-calling through LLM code generation"
 readme = "README.md"
 authors = [
@@ -10,7 +10,6 @@ authors = [
 requires-python = ">=3.11"
 dependencies = [
     "ipython>=9.0.2",
-    "openai>=1.69.0",
     "rich>=13.9.4",
 ]
 keywords = ["llm", "agent", "function-calling"]
@@ -27,6 +26,20 @@ classifiers = [
 Homepage = "https://github.com/acodercat/py-calling-agent"
 Repository = "https://github.com/acodercat/py-calling-agent"
 
+[project.optional-dependencies]
+litellm = [
+    "litellm>=1.73.0",
+]
+
+openai = [
+    "openai>=1.91.0",
+]
+
+all = [
+    "litellm>=1.73.0",
+    "openai>=1.91.0",
+]
+
 [build-system]
 requires = ["hatchling"]
 build-backend = "hatchling.build"
@@ -34,4 +47,5 @@ build-backend = "hatchling.build"
 [dependency-groups]
 dev = [
     "pytest>=8.3.5",
+    "pytest-asyncio>=1.0.0",
 ]

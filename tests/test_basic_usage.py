@@ -1,8 +1,9 @@
-import pytest
 from py_calling_agent import PyCallingAgent
+from py_calling_agent.python_runtime import PythonRuntime, Function
+import pytest
 
 @pytest.fixture
-def basic_agent(llm_engine):
+def basic_agent(model):
     def add(a: int, b: int) -> int:
         """Add two numbers together"""
         return a + b
@@ -11,18 +12,29 @@ def basic_agent(llm_engine):
         """Multiply two numbers together"""
         return a * b
 
+    # Create Function objects
+    add_func = Function(add)
+    multiply_func = Function(multiply)
+    
+    # Create runtime with functions
+    runtime = PythonRuntime(
+        functions=[add_func, multiply_func]
+    )
+    
     return PyCallingAgent(
-        llm_engine,
-        functions=[add, multiply]
+        model,
+        runtime=runtime
     )
 
-def test_basic_calculation(basic_agent):
-    result = basic_agent.run("Calculate 5 plus 3")
-    assert any(str(8) in part.lower() for part in result.split())
+@pytest.mark.asyncio
+async def test_basic_calculation(basic_agent):
+    response = await basic_agent.run("Calculate 5 plus 3")
+    assert any(str(8) in part.lower() for part in response.content.split())
 
-def test_multiple_calculations(basic_agent):
-    result1 = basic_agent.run("Calculate 4 times 6")
-    assert any(str(24) in part.lower() for part in result1.split())
+@pytest.mark.asyncio
+async def test_multiple_calculations(basic_agent):
+    response1 = await basic_agent.run("Calculate 4 times 6")
+    assert any(str(24) in part.lower() for part in response1.content.split())
     
-    result2 = basic_agent.run("Add 10 and 20")
-    assert any(str(30) in part.lower() for part in result2.split()) 
+    response2 = await basic_agent.run("Add 10 and 20")
+    assert any(str(30) in part.lower() for part in response2.content.split()) 

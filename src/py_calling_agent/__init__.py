@@ -1,15 +1,15 @@
-__version__ = "0.2.3"
+__version__ = "0.3.0"
 
-from py_calling_agent.agent import PyCallingAgent, Message, MessageRole, AgentState, LogLevel, Logger, EventType
-from py_calling_agent.llm import LLMEngine, OpenAILLMEngine
+from py_calling_agent.agent import PyCallingAgent, Message, MessageRole, LogLevel, Logger, EventType
+from py_calling_agent.models import Model, OpenAIServerModel, LiteLLMModel
 
 __all__ = [
     "PyCallingAgent",
-    "LLMEngine",
-    "OpenAILLMEngine",
+    "Model",
+    "OpenAIServerModel",
+    "LiteLLMModel",
     "Message",
     "MessageRole",
-    "AgentState",
     "LogLevel",
     "Logger",
     "EventType",

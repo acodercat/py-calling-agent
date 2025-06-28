@@ -1,27 +1,21 @@
 # 🤖 PyCallingAgent
 [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](https://opensource.org/licenses/MIT)
 [![Python 3.11+](https://img.shields.io/badge/python-3.11+-blue.svg)](https://www.python.org/downloads/)
-[![PyPI version](https://img.shields.io/pypi/v/py-calling-agent.svg?color=%2334D058&label=pypi%20package)](https://pypi.org/project/py-calling-agent)
+[![PyPI version](https://img.shields.io/badge/pypi-0.3.0-blue.svg)](https://pypi.org/project/py-calling-agent)
 
-PyCallingAgent is a tool-augmented agent framework that enables function-calling through LLM code generation and provides runtime state management. Unlike traditional JSON-schema approaches, It leverages LLM's inherent coding capabilities to interact with tools through a Python runtime environment, allowing direct access to execution results and runtime state.
+PyCallingAgent is a tool-augmented agent framework that enables function-calling through LLM code generation and provides runtime state management. Unlike traditional JSON-schema approaches, it leverages LLM's inherent coding capabilities to interact with tools through a Python runtime environment, allowing direct access to execution results and runtime state.
 
 ## Features
 
-- **Code-Based Function Calling**: Uses LLM's code generation capabilities instead of JSON schemas
-- **Runtime Environment**: 
-  - Inject Python objects
-  - Register functions as tools
-  - Access execution results from runtime
-- **Multi-Turn Conversations**: Maintains context and runtime state across multiple interactions
-- **Flexible LLM Support**: Works with various LLM providers through a unified interface
-
-## Roadmap
-
-We're actively working on expanding PyCallingAgent's capabilities, including:
-
-- Streaming response support
-- Asynchronous execution
-- Enhanced test coverage
+- **🤖 Code-Based Function Calling**: Leverages LLM's natural coding abilities instead of rigid JSON schemas
+- **🔧 Secure Runtime Environment**: 
+  - Inject Python objects, variables, and functions as tools
+  - AST-based security validation prevents dangerous code execution
+  - Access execution results and maintain state across interactions
+- **💬 Multi-Turn Conversations**: Persistent context and runtime state across multiple interactions
+- **🌐 Flexible LLM Support**: Works with any LLM provider via OpenAI-compatible APIs or LiteLLM
+- **⚡ Streaming & Async**: Real-time event streaming and full async/await support for optimal performance
+- **🛡️ Execution Control**: Configurable step limits and error handling to prevent infinite loops
 
 ## Installation
 
@@ -29,6 +23,19 @@ We're actively working on expanding PyCallingAgent's capabilities, including:
 
 ```bash
 pip install py-calling-agent
+```
+
+For additional LLM provider support:
+
+```bash
+# OpenAI support
+pip install 'py-calling-agent[openai]'
+
+# LiteLLM support (recommended for multiple providers)
+pip install 'py-calling-agent[litellm]'
+
+# All dependencies
+pip install 'py-calling-agent[all]'
 ```
 
 ### From Source
@@ -45,193 +52,259 @@ pip install -e .
 ### Basic Function Calling
 
 ```python
-from py_calling_agent import PyCallingAgent, OpenAILLMEngine
+import asyncio
+from py_calling_agent import PyCallingAgent
+from py_calling_agent.models import OpenAIServerModel
+from py_calling_agent.python_runtime import PythonRuntime, Function
 
-# Initialize LLM engine
-llm_engine = OpenAILLMEngine(
-    model_id="your-model",
-    api_key="your-api-key",
-    base_url="your-base-url"
-)
+async def main():
+    # Initialize LLM model
+    model = OpenAIServerModel(
+        model_id="your-model",
+        api_key="your-api-key",
+        base_url="your-base-url"
+    )
 
-# Define tool functions
-def add(a: int, b: int) -> int:
-    """Add two numbers together"""
-    return a + b
+    # Define tool functions
+    def add(a: int, b: int) -> int:
+        """Add two numbers together"""
+        return a + b
 
-def multiply(a: int, b: int) -> int:
-    """Multiply two numbers together"""
-    return a * b
+    def multiply(a: int, b: int) -> int:
+        """Multiply two numbers together"""
+        return a * b
 
-# Create agent with functions
-agent = PyCallingAgent(
-    llm_engine,
-    functions=[add, multiply]
-)
+    # Create runtime with functions
+    runtime = PythonRuntime(
+        functions=[Function(add), Function(multiply)]
+    )
 
-# Run calculations
-result = agent.run("Calculate 5 plus 3")
-print("Result:", result)
+    # Create agent
+    agent = PyCallingAgent(model, runtime=runtime)
+
+    # Run calculations
+    result = await agent.run("Calculate 5 plus 3")
+    print("Result:", result)
+
+if __name__ == "__main__":
+    asyncio.run(main())
 ```
 
 ### Object Methods and State Management
 
 ```python
-from py_calling_agent import PyCallingAgent, OpenAILLMEngine
+import asyncio
+from py_calling_agent import PyCallingAgent
+from py_calling_agent.models import LiteLLMModel
+from py_calling_agent.python_runtime import PythonRuntime, Function, Variable
 
-# Initialize LLM engine
-llm_engine = OpenAILLMEngine(
-    model_id="your-model",
-    api_key="your-api-key",
-    base_url="your-base-url"
-)
+async def main():
+    # Initialize LLM model
+    model = LiteLLMModel(
+        model_id="your-model",
+        api_key="your-api-key",
+        base_url="your-base-url"
+    )
 
-# Define a class with methods
-class DataProcessor:
-    """A utility class for processing and filtering data collections.
-    
-    This class provides methods for basic data processing operations such as
-    sorting, removing duplicates, and filtering based on thresholds.
-    
-    Example:
-        >>> processor = DataProcessor()
-        >>> processor.process_list([3, 1, 2, 1, 3])
-        [1, 2, 3]
-        >>> processor.filter_numbers([1, 5, 3, 8, 2], 4)
-        [5, 8]
-    """
-    def process_list(self, data: list) -> list:
-        """Sort a list and remove duplicates"""
-        return sorted(set(data))
-    
-    def filter_numbers(self, data: list, threshold: int) -> list:
-        """Filter numbers greater than threshold"""
-        return [x for x in data if x > threshold]
+    # Define a class with methods
+    class DataProcessor:
+        """A utility class for processing and filtering data collections.
+        
+        This class provides methods for basic data processing operations such as
+        sorting, removing duplicates, and filtering based on thresholds.
+        
+        Example:
+            >>> processor = DataProcessor()
+            >>> processor.process_list([3, 1, 2, 1, 3])
+            [1, 2, 3]
+            >>> processor.filter_numbers([1, 5, 3, 8, 2], 4)
+            [5, 8]
+        """
+        def process_list(self, data: list) -> list:
+            """Sort a list and remove duplicates"""
+            return sorted(set(data))
+        
+        def filter_numbers(self, data: list, threshold: int) -> list:
+            """Filter numbers greater than threshold"""
+            return [x for x in data if x > threshold]
 
-# Prepare context
-processor = DataProcessor()
-numbers = [3, 1, 4, 1, 5, 9, 2, 6, 5]
+    # Prepare context
+    processor = DataProcessor()
+    numbers = [3, 1, 4, 1, 5, 9, 2, 6, 5]
 
-objects = {
-    'processor': processor,
-    'numbers': numbers,
-    'processed_data': None,
-    'filtered_data': None
-}
+    # Create runtime with variables and functions
+    runtime = PythonRuntime(
+        variables=[
+            Variable(
+                name="processor",
+                value=processor,
+                description="Data processing tool with various methods"
+            ),
+            Variable(
+                name="numbers",
+                value=numbers,
+                description="Input list of numbers"
+            ),
+            Variable(
+                name="processed_data",
+                description="Store processed data in this variable"
+            ),
+            Variable(
+                name="filtered_data",
+                description="Store filtered data in this variable"
+            )
+        ]
+    )
 
-object_descriptions = {
-    'processor': {
-        'description': 'Data processing tool with various methods',
-        'example': 'processed_data = processor.process_list(numbers)'
-    },
-    'numbers': {
-        'description': 'Input list of numbers',
-        'example': 'filtered_data = processor.filter_numbers(numbers, 5)'
-    },
-    'processed_data': {
-        'description': 'Store processed data in this variable',
-        'example': 'processed_data = processor.process_list(numbers)'
-    },
-    'filtered_data': {
-        'description': 'Store filtered data in this variable',
-        'example': 'filtered_data = processor.filter_numbers(numbers, 5)'
-    }
-}
+    # Create agent
+    agent = PyCallingAgent(model, runtime=runtime)
 
-# Create agent
-agent = PyCallingAgent(
-    llm_engine,
-    objects=objects,
-    object_descriptions=object_descriptions
-)
+    # Process data
+    await agent.run("Use processor to sort and deduplicate numbers")
+    processed_data = agent.runtime.get_variable_value('processed_data')
+    print("Processed data:", processed_data)
 
-# Process data
-agent.run("Use processor to sort and deduplicate numbers")
-processed_data = agent.get_object('processed_data')
-print("Processed data:", processed_data)
+    # Filter data
+    await agent.run("Filter numbers greater than 4")
+    filtered_data = agent.runtime.get_variable_value('filtered_data')
+    print("Filtered data:", filtered_data)
 
-# Filter data
-agent.run("Filter numbers greater than 4")
-filtered_data = agent.get_object('filtered_data')
-print("Filtered data:", filtered_data)
+if __name__ == "__main__":
+    asyncio.run(main())
 ```
+
 ### Streaming Responses
 
 ```python
-from py_calling_agent import PyCallingAgent, OpenAILLMEngine, LogLevel
+import asyncio
+from py_calling_agent import PyCallingAgent, LogLevel
+from py_calling_agent.models import OpenAIServerModel
+from py_calling_agent.python_runtime import PythonRuntime, Function, Variable
 
-# Initialize LLM engine
-llm_engine = OpenAILLMEngine(
-    model_id="your-model",
-    api_key="your-api-key",
-    base_url="your-base-url"
-)
+async def main():
+    # Initialize LLM model
+    model = OpenAIServerModel(
+        model_id="your-model",
+        api_key="your-api-key",
+        base_url="your-base-url"
+    )
 
-# Define tool functions
-def calculate_sum(a: int, b: int) -> int:
-    """Calculate the sum of two numbers"""
-    return a + b
+    # Define tool functions
+    def calculate_sum(a: int, b: int) -> int:
+        """Calculate the sum of two numbers"""
+        return a + b
 
-# Define data processor class
-class DataProcessor:
-    def process_list(self, data: list) -> list:
-        """Sort a list and remove duplicates"""
-        return sorted(set(data))
+    # Define data processor class
+    class DataProcessor:
+        def process_list(self, data: list) -> list:
+            """Sort a list and remove duplicates"""
+            return sorted(set(data))
 
-# Prepare context
-processor = DataProcessor()
-numbers = [3, 1, 4, 1, 5, 9, 2, 6, 5]
+    # Prepare context
+    processor = DataProcessor()
+    numbers = [3, 1, 4, 1, 5, 9, 2, 6, 5]
 
-objects = {
-    'processor': processor,
-    'numbers': numbers,
-    'result': None
-}
+    # Create runtime
+    runtime = PythonRuntime(
+        functions=[Function(calculate_sum)],
+        variables=[
+            Variable(
+                name="processor",
+                value=processor,
+                description="Data processing tool"
+            ),
+            Variable(
+                name="numbers",
+                value=numbers,
+                description="Input list of numbers"
+            ),
+            Variable(
+                name="result",
+                description="Store results here"
+            )
+        ]
+    )
 
-object_descriptions = {
-    'processor': {'description': 'Data processing tool'},
-    'numbers': {'description': 'Input list of numbers'},
-    'result': {
-        'description': 'Store results here',
-        'example': 'result = processor.process_list(numbers)'
-    }
-}
+    # Create agent with streaming support
+    agent = PyCallingAgent(
+        model,
+        runtime=runtime,
+        log_level=LogLevel.ERROR
+    )
 
-# Create agent with streaming support
-agent = PyCallingAgent(
-    llm_engine,
-    objects=objects,
-    object_descriptions=object_descriptions,
-    functions=[calculate_sum],
-    log_level=LogLevel.ERROR
-)
+    # Stream the response in real-time with event type handling
+    async for event in agent.stream_events("Sort the numbers and calculate sum of the first two elements"):
+        if event.type.value == 'TEXT':
+            print(event.content, end="", flush=True)
+        elif event.type.value == 'CODE':
+            print("Executing Code:", event.content)
+        elif event.type.value == 'EXECUTION_RESULT':
+            print("Execution Result:", event.content)
+        elif event.type.value == 'EXECUTION_ERROR':
+            print("Execution Error:", event.content)
 
-# Stream the response in real-time with event type handling
-for event in agent.stream("Sort the numbers and calculate sum of the first two elements"):
-    
-    if event.type.name == 'TEXT':
-        print(event.content, end="", flush=True)
-
-    if event.type.name == 'CODE':
-        print("Executing Code:", event.content)
-    
-    if event.type.name == 'EXECUTION_RESULT':
-        print("Execution Result:", event.content)
-    
-    if event.type.name == 'EXECUTION_ERROR':
-        print("Execution Error:", event.content)
+if __name__ == "__main__":
+    asyncio.run(main())
 ```
-
 
 ## Advanced Usage
 
 For more examples, check out the [examples](examples) directory:
 
-- [Basic Usage](examples/basic_usage.py): Simple function calling
-- [Object State](examples/object_state.py): Managing runtime objects
-- [Object Methods](examples/object_methods.py): Using class methods
-- [Multi-Turn](examples/multi_turn.py): Complex analysis conversations
-- [Stream](examples/stream.py): Streaming responses
+- [Basic Usage](examples/basic_usage.py): Simple function calling and object processing
+- [Runtime State](examples/runtime_state.py): Managing runtime state across interactions
+- [Object Methods](examples/object_methods.py): Using class methods and complex objects
+- [Multi-Turn](examples/multi_turn.py): Complex analysis conversations with state persistence
+- [Stream](examples/stream.py): Streaming responses and execution events
+
+## LLM Provider Support
+
+PyCallingAgent supports multiple LLM providers:
+
+### OpenAI-Compatible Models
+```python
+from py_calling_agent.models import OpenAIServerModel
+
+model = OpenAIServerModel(
+    model_id="gpt-4",
+    api_key="your-api-key",
+    base_url="https://api.openai.com/v1"  # or your custom endpoint
+)
+```
+
+### LiteLLM Models (Recommended)
+LiteLLM provides unified access to hundreds of LLM providers:
+
+```python
+from py_calling_agent.models import LiteLLMModel
+
+# OpenAI
+model = LiteLLMModel(
+    model_id="gpt-4",
+    api_key="your-api-key"
+)
+
+# Anthropic Claude
+model = LiteLLMModel(
+    model_id="claude-3-sonnet-20240229",
+    api_key="your-api-key"
+)
+
+# Google Gemini
+model = LiteLLMModel(
+    model_id="gemini/gemini-pro",
+    api_key="your-api-key"
+)
+```
+
+## Roadmap
+
+We're actively working on expanding PyCallingAgent's capabilities, including:
+
+- Enhanced error handling and recovery
+- More LLM provider integrations
+- Advanced prompt engineering tools
+- Performance optimizations
 
 ## Contributing
 
