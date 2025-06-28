@@ -11,6 +11,7 @@ DEFAULT_INSTRUCTIONS = """
 5. You must not perform any calculations or operations yourself, even for simple tasks like sorting or addition. 
    All operations must be done through the Python environment.
 6. Write your code in a py_calling code block. In each step, write all your code in only one block.
+7. Never predict, simulate, or fabricate code execution results.
 """
 
 DEFAULT_ADDITIONAL_CONTEXT = """
