@@ -1,28 +1,28 @@
 # 🤖 PyCallingAgent
+**🚀 AI that executes, not just generates!**
+
 [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](https://opensource.org/licenses/MIT)
 [![Python 3.11+](https://img.shields.io/badge/python-3.11+-blue.svg)](https://www.python.org/downloads/)
 [![PyPI version](https://img.shields.io/badge/pypi-0.3.0-blue.svg)](https://pypi.org/project/py-calling-agent)
 
 PyCallingAgent is a tool-augmented agent framework that enables function-calling through LLM code generation and provides runtime state management. Unlike traditional JSON-schema approaches, it leverages LLM's inherent coding capabilities to interact with tools through a Python runtime environment, allowing direct access to execution results and runtime state.
 
-## Features
+> *"When your AI needs to run code, not just write it"*
 
-- **🤖 Code-Based Function Calling**: Leverages LLM's natural coding abilities instead of rigid JSON schemas
-- **🔧 Secure Runtime Environment**: 
-  - Inject Python objects, variables, and functions as tools
-  - AST-based security validation prevents dangerous code execution
-  - Access execution results and maintain state across interactions
-- **💬 Multi-Turn Conversations**: Persistent context and runtime state across multiple interactions
-- **🌐 Flexible LLM Support**: Works with any LLM provider via OpenAI-compatible APIs or LiteLLM
-- **⚡ Streaming & Async**: Real-time event streaming and full async/await support for optimal performance
-- **🛡️ Execution Control**: Configurable step limits and error handling to prevent infinite loops
+## Why PyCallingAgent?
 
-## Installation
+**Traditional function calling is broken.** JSON schemas are rigid, error-prone, and limit what your AI can do. PyCallingAgent unleashes your LLM's natural coding abilities:
 
-### From PyPI (Recommended)
+- 🧠 **Native Code Generation** - LLMs excel at writing code, not parsing JSON
+- 🔄 **Persistent State** - Maintain variables and objects across conversations  
+- 🛡️ **Secure by Design** - AST validation prevents dangerous code execution
+- ⚡ **Real-time Streaming** - Watch your AI think and execute in real-time
+- 🌐 **Universal LLM Support** - Works with OpenAI, Anthropic, Google, and 100+ providers
+
+## Quick Start
 
 ```bash
-pip install py-calling-agent
+pip install 'py-calling-agent[all]'
 ```
 
 For additional LLM provider support:
@@ -33,23 +33,9 @@ pip install 'py-calling-agent[openai]'
 
 # LiteLLM support (recommended for multiple providers)
 pip install 'py-calling-agent[litellm]'
-
-# All dependencies
-pip install 'py-calling-agent[all]'
 ```
 
-### From Source
-
-```bash
-# Clone the repository
-git clone https://github.com/acodercat/py-calling-agent.git
-cd py-calling-agent
-pip install -e .
-```
-
-## Example Usage
-
-### Basic Function Calling
+### Simple Function Calling
 
 ```python
 import asyncio
@@ -90,7 +76,7 @@ if __name__ == "__main__":
     asyncio.run(main())
 ```
 
-### Object Methods and State Management
+### Advanced: Stateful Object Interactions
 
 ```python
 import asyncio
@@ -173,83 +159,33 @@ if __name__ == "__main__":
     asyncio.run(main())
 ```
 
-### Streaming Responses
+### Real-time Streaming
+
+Watch your AI think and execute code in real-time:
 
 ```python
-import asyncio
-from py_calling_agent import PyCallingAgent, LogLevel
-from py_calling_agent.models import OpenAIServerModel
-from py_calling_agent.python_runtime import PythonRuntime, Function, Variable
-
-async def main():
-    # Initialize LLM model
-    model = OpenAIServerModel(
-        model_id="your-model",
-        api_key="your-api-key",
-        base_url="your-base-url"
-    )
-
-    # Define tool functions
-    def calculate_sum(a: int, b: int) -> int:
-        """Calculate the sum of two numbers"""
-        return a + b
-
-    # Define data processor class
-    class DataProcessor:
-        def process_list(self, data: list) -> list:
-            """Sort a list and remove duplicates"""
-            return sorted(set(data))
-
-    # Prepare context
-    processor = DataProcessor()
-    numbers = [3, 1, 4, 1, 5, 9, 2, 6, 5]
-
-    # Create runtime
-    runtime = PythonRuntime(
-        functions=[Function(calculate_sum)],
-        variables=[
-            Variable(
-                name="processor",
-                value=processor,
-                description="Data processing tool"
-            ),
-            Variable(
-                name="numbers",
-                value=numbers,
-                description="Input list of numbers"
-            ),
-            Variable(
-                name="result",
-                description="Store results here"
-            )
-        ]
-    )
-
-    # Create agent with streaming support
-    agent = PyCallingAgent(
-        model,
-        runtime=runtime,
-        log_level=LogLevel.ERROR
-    )
-
-    # Stream the response in real-time with event type handling
-    async for event in agent.stream_events("Sort the numbers and calculate sum of the first two elements"):
-        if event.type.value == 'TEXT':
-            print(event.content, end="", flush=True)
-        elif event.type.value == 'CODE':
-            print("Executing Code:", event.content)
-        elif event.type.value == 'EXECUTION_RESULT':
-            print("Execution Result:", event.content)
-        elif event.type.value == 'EXECUTION_ERROR':
-            print("Execution Error:", event.content)
-        elif event.type.name == 'FINAL_RESPONSE':
-            print("Final response:", event.content)
-
-if __name__ == "__main__":
-    asyncio.run(main())
+async for event in agent.stream_events("Analyze this data and create a summary"):
+    if event.type.value == 'CODE':
+        print(f"🔧 Executing: {event.content}")
+    elif event.type.value == 'EXECUTION_RESULT':
+        print(f"✅ Result: {event.content}")
+    elif event.type.value == 'TEXT':
+        print(event.content, end="", flush=True)
 ```
 
-## Advanced Usage
+## Key Features
+
+- **🤖 Code-Based Function Calling**: Leverages LLM's natural coding abilities instead of rigid JSON schemas
+- **🔧 Secure Runtime Environment**: 
+  - Inject Python objects, variables, and functions as tools
+  - AST-based security validation prevents dangerous code execution
+  - Access execution results and maintain state across interactions
+- **💬 Multi-Turn Conversations**: Persistent context and runtime state across multiple interactions
+- **⚡ Streaming & Async**: Real-time event streaming and full async/await support for optimal performance
+- **🛡️ Execution Control**: Configurable step limits and error handling to prevent infinite loops
+- **🌐 Flexible LLM Support**: Works with any LLM provider via OpenAI-compatible APIs or LiteLLM:
+
+## Real-World Examples
 
 For more examples, check out the [examples](examples) directory:
 
@@ -301,14 +237,6 @@ model = LiteLLMModel(
 )
 ```
 
-## Roadmap
-
-We're actively working on expanding PyCallingAgent's capabilities, including:
-
-- Enhanced error handling and recovery
-- More LLM provider integrations
-- Advanced prompt engineering tools
-- Performance optimizations
 
 ## Contributing
 
@@ -317,4 +245,4 @@ For more details, see [CONTRIBUTING.md](CONTRIBUTING.md).
 
 ## License
 
-This project is licensed under the MIT License - see the [LICENSE](LICENSE) file for details.
+MIT License - see [LICENSE](LICENSE) for details.
