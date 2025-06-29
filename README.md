@@ -27,13 +27,13 @@ PyCallingAgent is a tool-augmented agent framework that enables function-calling
 pip install 'py-calling-agent[all]'
 ```
 
-For additional LLM provider support:
+Choose your installation:
 
 ```bash
 # OpenAI support
 pip install 'py-calling-agent[openai]'
 
-# LiteLLM support (recommended for multiple providers)
+# 100+ LLM providers via LiteLLM 
 pip install 'py-calling-agent[litellm]'
 ```
 
@@ -54,25 +54,48 @@ async def main():
     )
 
     # Define tool functions
-    def add(a: int, b: int) -> int:
-        """Add two numbers together"""
-        return a + b
+    def add_task(task_name: str) -> str:
+        """Add a new task to the task list"""
+        tasks.append({"name": task_name, "done": False})
+        return f"Added task: {task_name}"
 
-    def multiply(a: int, b: int) -> int:
-        """Multiply two numbers together"""
-        return a * b
+    def complete_task(task_name: str) -> str:
+        """Mark a task as completed"""
+        for task in tasks:
+            if task_name.lower() in task["name"].lower():
+                task["done"] = True
+                return f"Completed: {task['name']}"
+        return f"Task '{task_name}' not found"
 
-    # Create runtime with functions
+    def send_reminder(message: str) -> str:
+        """Send a reminder notification"""
+        return f"Reminder: {message}"
+
+    # Initialize data
+    tasks = []
+
+    # Setup Runtime
     runtime = PythonRuntime(
-        functions=[Function(add), Function(multiply)]
+        variables=[
+            Variable("tasks", tasks, "List of user's tasks. Example: [{'name': 'walk the dog', 'done': False}]")
+        ],
+        functions=[
+            Function(add_task),
+            Function(complete_task), 
+            Function(send_reminder)
+        ]
     )
 
-    # Create agent
     agent = PyCallingAgent(model, runtime=runtime)
 
-    # Run calculations
-    response = await agent.run("Calculate 5 plus 3")
-    print("Response:", response)
+    await agent.run("Add buy groceries and call mom to my tasks")
+    print(f"Current tasks: {runtime.get_variable_value('tasks')}")
+
+    await agent.run("Mark groceries done and remind me about mom")
+    print(f"Final state: {runtime.get_variable_value('tasks')}")
+
+    response = await agent.run("What's my progress?")
+    print(response.content)
 
 if __name__ == "__main__":
     asyncio.run(main())
