@@ -14,9 +14,11 @@ PyCallingAgent is a tool-augmented agent framework that enables function-calling
 **Traditional function calling is broken.** JSON schemas are rigid, error-prone, and limit what your AI can do. PyCallingAgent unleashes your LLM's natural coding abilities:
 
 - 🧠 **Native Code Generation** - LLMs excel at writing code, not parsing JSON
+- ⚡ **Fewer Iterations** - Execute complex multi-step workflows in a single turn
 - 🔄 **Persistent State** - Maintain variables and objects across conversations  
+- 🎯 **Maximum Flexibility** - Handle dynamic workflows that JSON schemas can't express
 - 🛡️ **Secure by Design** - AST validation prevents dangerous code execution
-- ⚡ **Real-time Streaming** - Watch your AI think and execute in real-time
+- 📡 **Real-time Streaming** - Watch your AI think and execute in real-time
 - 🌐 **Universal LLM Support** - Works with OpenAI, Anthropic, Google, and 100+ providers
 
 ## Quick Start
@@ -183,7 +185,8 @@ async for event in agent.stream_events("Analyze this data and create a summary")
 - **💬 Multi-Turn Conversations**: Persistent context and runtime state across multiple interactions
 - **⚡ Streaming & Async**: Real-time event streaming and full async/await support for optimal performance
 - **🛡️ Execution Control**: Configurable step limits and error handling to prevent infinite loops
-- **🌐 Flexible LLM Support**: Works with any LLM provider via OpenAI-compatible APIs or LiteLLM:
+- **🎯 Unmatched Flexibility**: JSON schemas break with dynamic workflows. Python code adapts to any situation - conditional logic, loops, and complex data transformations.
+- **🌐 Flexible LLM Support**: Works with any LLM provider via OpenAI-compatible APIs or LiteLLM
 
 ## Real-World Examples
 
