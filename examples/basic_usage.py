@@ -50,11 +50,11 @@ async def main():
     agent1 = PyCallingAgent(model, runtime=runtime1)
     
     # Run simple calculations
-    result = await agent1.run("Calculate 5 plus 3")
-    print("Result:", result)
+    response = await agent1.run("Calculate 5 plus 3")
+    print("Result:", response.content)
     
-    result = await agent1.run("What is 4 times 6?")
-    print("Result:", result)
+    response = await agent1.run("What is 4 times 6?")
+    print("Result:", response.content)
     
     print("\n=== usage 2: Object Processing ===")
     
@@ -89,7 +89,8 @@ async def main():
     agent2 = PyCallingAgent(model, runtime=runtime2)
     
     # Run task using injected objects
-    await agent2.run("Use processor to sort the numbers and store the result in the 'result' variable")
+    response = await agent2.run("Use processor to sort the numbers and store the result in the 'result' variable")
+    print("Response:", response)
     
     # Retrieve results from Python environment
     sorted_result = agent2.runtime.get_variable_value('result')

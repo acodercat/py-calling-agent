@@ -76,12 +76,12 @@ async def main():
     print("\nBasic stats:", stats)
 
     # Second turn - ask about specific stat
-    result = await agent.run("What is the average value in the stats?")
-    print("\nAverage value:", result)
+    response = await agent.run("What is the average value in the stats?")
+    print("\nAverage value:", response.content)
 
     # Third turn - ask for interpretation
-    result = await agent.run("Is the maximum value (9) significantly higher than the average?")
-    print("\nInterpretation:", result)
+    response = await agent.run("Is the maximum value (9) significantly higher than the average?")
+    print("\nInterpretation:", response.content)
 
     # Alternative approach with streaming
     print("\n\n=== Streaming Example ===")

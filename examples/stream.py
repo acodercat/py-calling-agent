@@ -52,7 +52,7 @@ async def main():
     agent = PyCallingAgent(
         model,
         runtime=runtime,
-        log_level=LogLevel.DEBUG
+        log_level=LogLevel.ERROR
     )
     
     logger = Logger(LogLevel.DEBUG)
@@ -60,7 +60,7 @@ async def main():
     
     logger.info("User Prompt", "Use processor to sort the numbers", 'yellow')
     
-    async for event in agent.stream_events("你在你的代码中创建一个多线程程序"):
+    async for event in agent.stream_events("Use processor to sort the numbers"):
         if event.type.name == 'TEXT':
             text = Text(event.content)
             text.stylize("cyan")
@@ -76,7 +76,7 @@ async def main():
             logger.error("Execution error", event.content, 'yellow')
 
         if event.type.name == 'FINAL_RESPONSE':
-            logger.error("Final response", event.content, 'green')
+            logger.info("Final response", event.content, 'green')
     
     print("\n")
     logger.info("Runtime State", str({

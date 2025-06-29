@@ -83,8 +83,8 @@ async def main():
     agent = PyCallingAgent(model, runtime=runtime)
 
     # Run calculations
-    result = await agent.run("Calculate 5 plus 3")
-    print("Result:", result)
+    response = await agent.run("Calculate 5 plus 3")
+    print("Response:", response)
 
 if __name__ == "__main__":
     asyncio.run(main())
@@ -242,6 +242,8 @@ async def main():
             print("Execution Result:", event.content)
         elif event.type.value == 'EXECUTION_ERROR':
             print("Execution Error:", event.content)
+        elif event.type.name == 'FINAL_RESPONSE':
+            print("Final response:", event.content)
 
 if __name__ == "__main__":
     asyncio.run(main())
@@ -281,13 +283,15 @@ from py_calling_agent.models import LiteLLMModel
 # OpenAI
 model = LiteLLMModel(
     model_id="gpt-4",
-    api_key="your-api-key"
+    api_key="your-api-key"，
+    custom_llm_provider='openai'
 )
 
 # Anthropic Claude
 model = LiteLLMModel(
     model_id="claude-3-sonnet-20240229",
-    api_key="your-api-key"
+    api_key="your-api-key",
+    custom_llm_provider='anthropic' 
 )
 
 # Google Gemini
