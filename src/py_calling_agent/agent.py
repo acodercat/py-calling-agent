@@ -401,7 +401,6 @@ class PyCallingAgent:
 
             yield Event(EventType.EXECUTION_RESULT, execution_result)
         except Exception as e:
-            context.complete()
             error_msg = str(e)
             self.logger.debug("Code execution error", error_msg)
             retry_prompt = f"Error: {error_msg}\nPlease fix the code and try again."

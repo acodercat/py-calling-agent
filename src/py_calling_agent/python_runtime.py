@@ -90,8 +90,11 @@ class CodeSecurityChecker:
             tree = ast.parse(code)
             violations.extend(self._check_ast(tree))
         except SyntaxError as e:
+            # Get the problematic source code line
+            lines = code.split('\n')
+            source_line = lines[e.lineno - 1].strip() if 1 <= e.lineno <= len(lines) else ""
             violations.append(SecurityViolation(
-                f"Syntax error: {e.msg}",
+                f"Syntax error: {e.msg}: '{source_line}'",
                 "syntax_error",
                 e.lineno
             ))
