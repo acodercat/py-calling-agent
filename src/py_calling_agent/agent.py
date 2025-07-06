@@ -358,13 +358,15 @@ class PyCallingAgent:
             # Final response without code
             self.add_message(AssistantMessage(model_response))
             context.complete()
+            self.logger.debug("Final response", model_response, "green")
             return model_response
         
         self.add_message(CodeExecutionMessage(model_response))
             
         try:
+            self.logger.debug("Code snippet", code_snippet, "green")
             execution_result = await self.runtime.execute(code_snippet)
-            self.logger.debug("Code executed", execution_result, "cyan")
+            self.logger.debug("Execution result", execution_result, "cyan")
             
             next_prompt = NEXT_STEP_PROMPT.format(execution_result=execution_result)
             self.add_message(ExecutionResultMessage(next_prompt))
@@ -382,30 +384,29 @@ class PyCallingAgent:
                                             context: ExecutionContext) -> AsyncGenerator[Event, None]:
         """Process model response with streaming events."""
         code_snippet = extract_python_code(model_response)
-        
         if not code_snippet:
             # Final response without code
             self.add_message(AssistantMessage(model_response))
             context.complete()
+            self.logger.debug("Final response", model_response, "green")
             yield Event(EventType.FINAL_RESPONSE, model_response)
             return
         
         self.add_message(CodeExecutionMessage(model_response))
 
         try:
+            self.logger.debug("Code snippet", code_snippet, "green")
             execution_result = await self.runtime.execute(code_snippet)
-            self.logger.debug("Code executed", execution_result, "cyan")
+            self.logger.debug("Execution result", execution_result, "cyan")
             
             next_prompt = NEXT_STEP_PROMPT.format(execution_result=execution_result)
             self.add_message(ExecutionResultMessage(next_prompt))
-
             yield Event(EventType.EXECUTION_RESULT, execution_result)
         except Exception as e:
             error_msg = str(e)
             self.logger.debug("Code execution error", error_msg)
             retry_prompt = f"Error: {error_msg}\nPlease fix the code and try again."
             self.add_message(ExecutionResultMessage(retry_prompt))
-
             yield Event(EventType.EXECUTION_ERROR, error_msg)
 
     def _log_step(self, context: ExecutionContext) -> None:
@@ -427,13 +428,12 @@ class PyCallingAgent:
         """Update or insert system message."""
 
         system_prompt = self.build_system_prompt()
+        self.logger.debug("System prompt loaded", system_prompt, "blue")
 
         if self.messages and isinstance(self.messages[0], SystemMessage):
             self.messages[0] = SystemMessage(system_prompt)
         else:
             self.messages.insert(0, SystemMessage(system_prompt))
-        
-        self.logger.debug("System prompt loaded", system_prompt, "blue")
 
     def _prepare_messages(self) -> List[Dict[str, str]]:
         """Convert internal message objects to dict format for LLM API."""
@@ -448,6 +448,7 @@ class PyCallingAgent:
     def add_message(self, message: Message) -> None:
         """Add message with automatic history management."""
         self.messages.append(message)
+        self.logger.debug("History length", f"Current history length: {len(self.messages)}/{self.max_history}", "yellow")
         self._trim_history()
     
     def _trim_history(self) -> None:
