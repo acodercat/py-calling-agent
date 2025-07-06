@@ -454,7 +454,21 @@ class PyCallingAgent:
     def _trim_history(self) -> None:
         """Trim message history if needed."""
         if len(self.messages) > self.max_history:
-            # Keep system message at index 0 and recent history
-            system_msg = self.messages[0]  # Always SystemMessage at index 0
-            recent_msgs = self.messages[-(self.max_history - 1):]
+            # Always keep system message at index 0
+            system_msg = self.messages[0]
+            
+            # Get all non-system messages
+            non_system_messages = self.messages[1:]
+            
+            # Keep only the most recent (max_history - 1) non-system messages
+            max_non_system_messages = self.max_history - 1
+            
+            if len(non_system_messages) > max_non_system_messages:
+                recent_msgs = non_system_messages[-max_non_system_messages:]
+            else:
+                recent_msgs = non_system_messages
+                
+            # Reconstruct the message list
             self.messages = [system_msg] + recent_msgs
+            
+            self.logger.debug("History trimmed", f"Trimmed to {len(self.messages)}/{self.max_history} messages", "yellow")
