@@ -43,7 +43,7 @@ pip install 'py-calling-agent[litellm]'
 import asyncio
 from py_calling_agent import PyCallingAgent
 from py_calling_agent.models import OpenAIServerModel
-from py_calling_agent.python_runtime import PythonRuntime, Function
+from py_calling_agent.python_runtime import PythonRuntime, Function, Variable
 
 async def main():
     # Initialize LLM model
