@@ -99,7 +99,7 @@ def test_describe_functions(runtime_with_function):
     """Test function description works"""
     description = runtime_with_function.describe_functions()
     assert "multiply" in description
-    assert "signature:" in description
+    assert "function:" in description
 
 
 def test_describe_variables(runtime_with_data):

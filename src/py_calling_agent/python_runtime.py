@@ -281,7 +281,7 @@ class Function:
     
     def __str__(self):
         """Return a string representation of the function."""
-        parts = [f"- signature: {self.signature}"]
+        parts = [f"- function: {self.signature}"]
         if self.description:
             parts.append(f"  description: {self.description}")
         if self.doc:

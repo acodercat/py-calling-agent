@@ -1,4 +1,4 @@
-from .prompts import DEFAULT_SYSTEM_PROMPT, NEXT_STEP_PROMPT, DEFAULT_INSTRUCTIONS, DEFAULT_ROLE_DEFINITION, DEFAULT_ADDITIONAL_CONTEXT
+from .prompts import DEFAULT_SYSTEM_PROMPT, NEXT_STEP_PROMPT, DEFAULT_INSTRUCTIONS, DEFAULT_AGENT_IDENTITY, DEFAULT_ADDITIONAL_CONTEXT
 from .python_runtime import PythonRuntime
 from typing import List, Dict, Any, AsyncGenerator
 from .models import Model
@@ -9,6 +9,8 @@ from .utils import extract_python_code
 from .streaming_text_parser import SegmentType, StreamingTextParser
 from enum import Enum, IntEnum
 from datetime import datetime
+from .constant import DEFAULT_PYTHON_BLOCK_IDENTIFIER
+
 class MessageRole(str, Enum):
     SYSTEM = "system"
     USER = "user"
@@ -135,6 +137,7 @@ class ExecutionContext:
     
     def __init__(self, max_steps: int = 10):
         self.max_steps = max_steps
+        self.code_snippets = []
         self.total_steps = 0
         self.state = ContextState.INITIALIZED
     
@@ -179,12 +182,14 @@ class AgentResponse:
         status: ExecutionStatus,
         steps_taken: int = 0,
         max_steps: int = 0,
+        code_snippets: List[str] = [],
     ):
         self.content = content
         self.status = status
         self.steps_taken = steps_taken
         self.max_steps = max_steps
-    
+        self.code_snippets = code_snippets
+
     def __str__(self) -> str:
         """String representation of the response."""
         return f"AgentResponse(status={self.status.value}, steps={self.steps_taken}/{self.max_steps}, content={self.content})"
@@ -238,10 +243,11 @@ class PyCallingAgent:
         system_prompt_template: str = DEFAULT_SYSTEM_PROMPT,
         max_steps: int = 5,
         log_level: LogLevel = LogLevel.DEBUG,
-        agent_role: str = DEFAULT_ROLE_DEFINITION,
+        agent_identity: str = DEFAULT_AGENT_IDENTITY,
         instructions: str = DEFAULT_INSTRUCTIONS,
         additional_context: str = DEFAULT_ADDITIONAL_CONTEXT,
         runtime: PythonRuntime = None,
+        python_block_identifier: str = DEFAULT_PYTHON_BLOCK_IDENTIFIER,
         messages: List[Message] = [],
         max_history: int = 10
     ):
@@ -250,9 +256,10 @@ class PyCallingAgent:
         self.system_prompt_template = system_prompt_template
         self.max_steps = max_steps
         self.runtime = runtime if runtime else PythonRuntime()
-        self.agent_role = agent_role
-        self.instructions = instructions
-        self.additional_context = additional_context
+        self.agent_identity = agent_identity
+        self.instructions = instructions.format(python_block_identifier=python_block_identifier)
+        self.additional_context = additional_context.format(python_block_identifier=python_block_identifier)
+        self.python_block_identifier = python_block_identifier
         self.messages = messages.copy()
         self.max_history = max_history
         self.logger = Logger(log_level)
@@ -262,7 +269,7 @@ class PyCallingAgent:
         return self.system_prompt_template.format(
             functions=self.runtime.describe_functions(), 
             variables=self.runtime.describe_variables(), 
-            role_definition=self.agent_role,
+            agent_identity=self.agent_identity,
             instructions=self.instructions,
             current_time=datetime.now().strftime("%Y-%m-%d %H:%M:%S"),
             additional_context=self.additional_context,
@@ -281,6 +288,7 @@ class PyCallingAgent:
                 self.logger.info("Max steps reached", f"Completed {context.total_steps}/{context.max_steps} steps")
                 return AgentResponse(
                     content='',
+                    code_snippets=context.code_snippets,
                     status=ExecutionStatus.MAX_STEPS_REACHED,
                     steps_taken=context.total_steps,
                     max_steps=self.max_steps
@@ -291,6 +299,7 @@ class PyCallingAgent:
             if not context.is_running:
                 return AgentResponse(
                     content=response,
+                    code_snippets=context.code_snippets,
                     status=ExecutionStatus.SUCCESS,
                     steps_taken=context.total_steps,
                     max_steps=self.max_steps
@@ -332,7 +341,7 @@ class PyCallingAgent:
         
         # Stream LLM response and collect
         chunks = []
-        parser = StreamingTextParser()
+        parser = StreamingTextParser(self.python_block_identifier)
         
         async for chunk in self.model.stream(self._prepare_messages()):
             chunks.append(chunk)
@@ -352,7 +361,7 @@ class PyCallingAgent:
 
     async def _process_model_response(self, model_response: str, context: ExecutionContext) -> str:
         """Process model response and execute code if needed."""
-        code_snippet = extract_python_code(model_response)
+        code_snippet = extract_python_code(model_response, self.python_block_identifier)
         
         if not code_snippet:
             # Final response without code
@@ -361,6 +370,7 @@ class PyCallingAgent:
             self.logger.debug("Final response", model_response, "green")
             return model_response
         
+        context.code_snippets.append(code_snippet)
         self.add_message(CodeExecutionMessage(model_response))
             
         try:
@@ -383,7 +393,7 @@ class PyCallingAgent:
     async def _process_model_response_streaming(self, model_response: str, 
                                             context: ExecutionContext) -> AsyncGenerator[Event, None]:
         """Process model response with streaming events."""
-        code_snippet = extract_python_code(model_response)
+        code_snippet = extract_python_code(model_response, self.python_block_identifier)
         if not code_snippet:
             # Final response without code
             self.add_message(AssistantMessage(model_response))

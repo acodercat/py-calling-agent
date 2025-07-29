@@ -1,9 +1,6 @@
 from enum import Enum
 from typing import List
 
-
-PYTHON_BLOCK_IDENTIFIER = "py_calling"
-
 class SegmentType(Enum):
     """Types of content segments."""
     TEXT = "text"
@@ -25,7 +22,7 @@ class StreamingTextParser:
         PYTHON_MATCH = "python_match" 
         CODE = "code"
     
-    def __init__(self):
+    def __init__(self, python_block_identifier: str):
         """Initialize the parser with clean state."""
         self.mode = self.Mode.TEXT
         self.text_buffer = ""
@@ -34,6 +31,7 @@ class StreamingTextParser:
         self.python_match_progress = ""
         self.in_code_block = False
         self.skip_next_triple_backtick = False
+        self.python_block_identifier = python_block_identifier
 
     def process_chunk(self, chunk: str) -> List[Segment]:
         """
@@ -102,7 +100,7 @@ class StreamingTextParser:
     
     def _handle_python_match_mode(self, char: str):
         """Handle character in PYTHON_MATCH mode."""
-        expected_sequence = PYTHON_BLOCK_IDENTIFIER
+        expected_sequence = self.python_block_identifier
         current_pos = len(self.python_match_progress)
         
         if current_pos < len(expected_sequence) and char == expected_sequence[current_pos]:

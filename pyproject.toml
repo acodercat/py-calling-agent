@@ -1,6 +1,6 @@
 [project]
 name = "py-calling-agent"
-version = "0.3.2"
+version = "0.3.3"
 description = "A Python agent framework that enables function-calling through LLM code generation"
 readme = "README.md"
 authors = [
@@ -51,4 +51,6 @@ dev = [
     "pytest>=8.3.5",
     "pytest-asyncio>=1.0.0",
     "twine>=6.1.0",
+    "litellm>=1.73.0",
+    "openai>=1.91.0",
 ]
