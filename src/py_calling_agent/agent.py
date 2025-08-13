@@ -1,4 +1,4 @@
-from .prompts import DEFAULT_SYSTEM_PROMPT, NEXT_STEP_PROMPT, DEFAULT_INSTRUCTIONS, DEFAULT_AGENT_IDENTITY, DEFAULT_ADDITIONAL_CONTEXT
+from .prompts import DEFAULT_SYSTEM_PROMPT, NEXT_STEP_PROMPT, DEFAULT_INSTRUCTIONS, DEFAULT_AGENT_IDENTITY, DEFAULT_ADDITIONAL_CONTEXT, EXECUTION_RESULT_EXCEEDED_PROMPT
 from .python_runtime import PythonRuntime
 from typing import List, Dict, Any, AsyncGenerator
 from .models import Model
@@ -223,6 +223,8 @@ class PyCallingAgent:
             List of Message objects to start with. Defaults to empty list.
         max_history (int, optional): Maximum message history to retain.
             Prevents memory bloat in long conversations. Defaults to 10.
+        max_execution_result_length (int, optional): Maximum length of execution result to be fed back to the LLM.
+            Prevents the agent from generating too long execution results. Defaults to 3000.
 
     Example:
         >>> def add(a: int, b: int) -> int:
@@ -249,7 +251,9 @@ class PyCallingAgent:
         runtime: PythonRuntime = None,
         python_block_identifier: str = DEFAULT_PYTHON_BLOCK_IDENTIFIER,
         messages: List[Message] = [],
-        max_history: int = 10
+        max_history: int = 10,
+        max_execution_result_length: int = 3000,
+        
     ):
         """Initialize PyCallingAgent with improved parameter handling."""
         self.model = model
@@ -262,6 +266,7 @@ class PyCallingAgent:
         self.python_block_identifier = python_block_identifier
         self.messages = messages.copy()
         self.max_history = max_history
+        self.max_execution_result_length = max_execution_result_length
         self.logger = Logger(log_level)
 
     def build_system_prompt(self) -> str:
@@ -376,9 +381,17 @@ class PyCallingAgent:
         try:
             self.logger.debug("Code snippet", code_snippet, "green")
             execution_result = await self.runtime.execute(code_snippet)
-            self.logger.debug("Execution result", execution_result, "cyan")
             
-            next_prompt = NEXT_STEP_PROMPT.format(execution_result=execution_result)
+            # Check if execution result is too long
+            if len(execution_result) > self.max_execution_result_length:
+                self.logger.debug("Execution result too long", f"Output length: {len(execution_result)} characters (max: {self.max_execution_result_length})", "yellow")
+                
+                # Tell LLM to adjust code without showing the output
+                next_prompt = EXECUTION_RESULT_EXCEEDED_PROMPT.format(output_length=len(execution_result), max_length=self.max_execution_result_length)
+            else:
+                self.logger.debug("Execution result", execution_result, "cyan")
+                next_prompt = NEXT_STEP_PROMPT.format(execution_result=execution_result)
+            
             self.add_message(ExecutionResultMessage(next_prompt))
             
             return model_response
@@ -407,9 +420,16 @@ class PyCallingAgent:
         try:
             self.logger.debug("Code snippet", code_snippet, "green")
             execution_result = await self.runtime.execute(code_snippet)
-            self.logger.debug("Execution result", execution_result, "cyan")
+            # Check if execution result is too long
+            if len(execution_result) > self.max_execution_result_length:
+                self.logger.debug("Execution result too long", f"Output length: {len(execution_result)} characters (max: {self.max_execution_result_length})", "yellow")
+                
+                # Tell LLM to adjust code without showing the output
+                next_prompt = EXECUTION_RESULT_EXCEEDED_PROMPT.format(output_length=len(execution_result), max_length=self.max_execution_result_length)
+            else:
+                self.logger.debug("Execution result", execution_result, "cyan")
+                next_prompt = NEXT_STEP_PROMPT.format(execution_result=execution_result)
             
-            next_prompt = NEXT_STEP_PROMPT.format(execution_result=execution_result)
             self.add_message(ExecutionResultMessage(next_prompt))
             yield Event(EventType.EXECUTION_RESULT, execution_result)
         except Exception as e:

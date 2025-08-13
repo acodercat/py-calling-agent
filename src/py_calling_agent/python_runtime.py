@@ -312,17 +312,15 @@ class PythonRuntime:
             for variable in variables:
                 self.inject_variable(variable)
 
-    def inject_function(self, function: Function) -> 'PythonRuntime':
+    def inject_function(self, function: Function):
         """Inject a function in both metadata and execution namespace."""
         self._functions[function.name] = function
         self._executor.inject_into_namespace(function.name, function.func)
-        return self
     
-    def inject_variable(self, variable: Variable) -> 'PythonRuntime':
+    def inject_variable(self, variable: Variable):
         """Inject a variable in both metadata and execution namespace."""
         self._variables[variable.name] = variable
         self._executor.inject_into_namespace(variable.name, variable.value)
-        return self
 
     async def execute(self, code: str) -> str:
         """Execute code using the executor."""

@@ -1,6 +1,6 @@
 [project]
 name = "py-calling-agent"
-version = "0.3.3"
+version = "0.3.4"
 description = "A Python agent framework that enables function-calling through LLM code generation"
 readme = "README.md"
 authors = [
