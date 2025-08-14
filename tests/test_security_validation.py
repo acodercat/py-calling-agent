@@ -11,7 +11,7 @@ def basic_agent(model):
         description="Input list of numbers to be processed"
     )
     runtime = PythonRuntime(variables=[numbers_var])
-    return PyCallingAgent(model, runtime=runtime)
+    return PyCallingAgent(model, runtime=runtime, detailed_error_feedback=True)
 
 @pytest.mark.asyncio
 async def test_security_violation_detection(basic_agent):
@@ -31,6 +31,6 @@ async def test_syntax_error_with_source_line(basic_agent):
         if event.type == EventType.EXECUTION_ERROR:
             # Should catch syntax error and show source line
             assert "Syntax error" in str(event.content)
-            assert "source_line" in str(event.content) or "'print('Hello world'" in str(event.content)
+            assert "detected at line 1" in str(event.content) or "'print('Hello world'" in str(event.content)
             return
     assert False, "Expected syntax error was not raised"

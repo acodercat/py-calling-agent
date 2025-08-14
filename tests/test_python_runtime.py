@@ -45,7 +45,7 @@ async def test_basic_execution(simple_runtime):
 async def test_print_output(simple_runtime):
     """Test code with print output"""
     output = await simple_runtime.execute("print('Hello World')")
-    assert "Hello World" in output
+    assert "Hello World" in output.stdout
 
 
 @pytest.mark.asyncio
@@ -67,22 +67,23 @@ async def test_function_usage(runtime_with_function):
 @pytest.mark.asyncio
 async def test_security_blocked_import(simple_runtime):
     """Test security blocks dangerous imports"""
-    with pytest.raises(SecurityViolation):
-        await simple_runtime.execute("import os")
+    result = await simple_runtime.execute("import os")
+    assert "Security violations found" in str(result.error)
+
 
 
 @pytest.mark.asyncio
 async def test_security_blocked_eval(simple_runtime):
     """Test security blocks eval"""
-    with pytest.raises(SecurityViolation):
-        await simple_runtime.execute("eval('2+2')")
+    result = await simple_runtime.execute("eval('2+2')")
+    assert "Security violations found" in str(result.error)
 
 
 @pytest.mark.asyncio
 async def test_security_blocked_open(simple_runtime):
     """Test security blocks file operations"""
-    with pytest.raises(SecurityViolation):
-        await simple_runtime.execute("open('test.txt')")
+    result = await simple_runtime.execute("open('test.txt')")
+    assert "Security violations found" in str(result.error)
 
 @pytest.mark.asyncio
 async def test_multiple_executions(simple_runtime):
@@ -112,5 +113,5 @@ def test_describe_variables(runtime_with_data):
 @pytest.mark.asyncio
 async def test_syntax_error(simple_runtime):
     """Test syntax errors are caught"""
-    with pytest.raises(SecurityViolation):
-        await simple_runtime.execute("if True")  # Missing colon
+    result = await simple_runtime.execute("if True")  # Missing colon
+    assert "Syntax error" in str(result.error)

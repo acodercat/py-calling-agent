@@ -96,3 +96,11 @@ Please modify your code to:
 2. Use summary statistics instead of full data (e.g., print shape, head(), describe() for dataframes)
 3. Print only essential information needed for the task
 """
+
+EXECUTION_ERROR_PROMPT = """
+The code execution generated an error: 
+<execution_error>
+{error}
+</execution_error>
+Please review the error carefully and modify your code to fix the error.
+"""

@@ -19,20 +19,21 @@ class StreamingTextParser:
     class Mode(Enum):
         TEXT = "text"
         BACKTICK_COUNT = "backtick_count"
-        PYTHON_MATCH = "python_match" 
+        LANGUAGE_MATCH = "language_match" 
         CODE = "code"
+        CODE_END_CHECK = "code_end_check"
     
-    def __init__(self, python_block_identifier: str):
+    def __init__(self, python_block_identifier: str = "python"):
         """Initialize the parser with clean state."""
         self.mode = self.Mode.TEXT
         self.text_buffer = ""
         self.code_buffer = ""
         self.backtick_count = 0
-        self.python_match_progress = ""
+        self.language_match_buffer = ""
         self.in_code_block = False
-        self.skip_next_triple_backtick = False
         self.python_block_identifier = python_block_identifier
-
+        self.pending_backticks = ""
+        
     def process_chunk(self, chunk: str) -> List[Segment]:
         """
         Process a chunk of streaming text.
@@ -49,35 +50,76 @@ class StreamingTextParser:
             segments = self._process_character(char)
             parsed_segments.extend(segments)
         
-        # Flush any remaining text buffer
-        if self.mode == self.Mode.TEXT and self.text_buffer:
-            parsed_segments.append(Segment(SegmentType.TEXT, self.text_buffer))
-            self.text_buffer = ""
-        
         return parsed_segments
+    
+    def flush(self) -> List[Segment]:
+        """
+        Flush all buffers and return remaining segments.
+        Should be called when the stream ends.
+        
+        Returns:
+            List of remaining parsed segments
+        """
+        segments = []
+        
+        if self.in_code_block:
+            if self.code_buffer:
+                segments.append(Segment(SegmentType.CODE, self.code_buffer.strip()))
+            warning_text = "\n[Warning: Unclosed code block]"
+            segments.append(Segment(SegmentType.TEXT, warning_text))
+        
+        if self.mode == self.Mode.BACKTICK_COUNT:
+            self.text_buffer += "`" * self.backtick_count
+        elif self.mode == self.Mode.LANGUAGE_MATCH:
+            self.text_buffer += "```" + self.language_match_buffer
+        elif self.mode == self.Mode.CODE_END_CHECK:
+            self.code_buffer += "`" * self.backtick_count
+            if self.code_buffer:
+                segments.append(Segment(SegmentType.CODE, self.code_buffer.strip()))
+        
+        if self.text_buffer:
+            segments.append(Segment(SegmentType.TEXT, self.text_buffer))
+        
+        # Reset state
+        self._reset_state()
+        
+        return segments
+    
+    def _reset_state(self):
+        """Reset parser to initial state."""
+        self.mode = self.Mode.TEXT
+        self.text_buffer = ""
+        self.code_buffer = ""
+        self.backtick_count = 0
+        self.language_match_buffer = ""
+        self.in_code_block = False
+        self.pending_backticks = ""
     
     def _process_character(self, char: str) -> List[Segment]:
         """Process a single character and return any completed segments."""
         segments = []
         
         if self.mode == self.Mode.TEXT:
-            self._handle_text_mode(char)
+            segments.extend(self._handle_text_mode(char))
         elif self.mode == self.Mode.BACKTICK_COUNT:
             segments.extend(self._handle_backtick_count_mode(char))
-        elif self.mode == self.Mode.PYTHON_MATCH:
-            self._handle_python_match_mode(char)
+        elif self.mode == self.Mode.LANGUAGE_MATCH:
+            segments.extend(self._handle_language_match_mode(char))
         elif self.mode == self.Mode.CODE:
-            self._handle_code_mode(char)
+            segments.extend(self._handle_code_mode(char))
+        elif self.mode == self.Mode.CODE_END_CHECK:
+            segments.extend(self._handle_code_end_check_mode(char))
         
         return segments
     
-    def _handle_text_mode(self, char: str):
+    def _handle_text_mode(self, char: str) -> List[Segment]:
         """Handle character in TEXT mode."""
         if char == '`':
             self.mode = self.Mode.BACKTICK_COUNT
             self.backtick_count = 1
         else:
             self.text_buffer += char
+        return []
     
     def _handle_backtick_count_mode(self, char: str) -> List[Segment]:
         """Handle character in BACKTICK_COUNT mode."""
@@ -86,67 +128,86 @@ class StreamingTextParser:
         if char == '`':
             self.backtick_count += 1
             if self.backtick_count == 3:
-                segments.extend(self._handle_triple_backtick())
+                # Three backticks - possibly a code block
+                if self.text_buffer:
+                    segments.append(Segment(SegmentType.TEXT, self.text_buffer))
+                    self.text_buffer = ""
+                self.mode = self.Mode.LANGUAGE_MATCH
+                self.language_match_buffer = ""
+                self.backtick_count = 0
         else:
-            # Not a sequence of backticks - add to appropriate buffer
-            buffer_content = "`" * self.backtick_count + char
-            if self.in_code_block:
-                self.code_buffer += buffer_content
-            else:
-                self.text_buffer += buffer_content
-            self._reset_backtick_count()
+            # Not a consecutive backtick - add to text buffer
+            self.text_buffer += "`" * self.backtick_count + char
+            self.mode = self.Mode.TEXT
+            self.backtick_count = 0
         
         return segments
     
-    def _handle_python_match_mode(self, char: str):
-        """Handle character in PYTHON_MATCH mode."""
-        expected_sequence = self.python_block_identifier
-        current_pos = len(self.python_match_progress)
+    def _handle_language_match_mode(self, char: str) -> List[Segment]:
+        """Handle character in LANGUAGE_MATCH mode."""
+        segments = []
         
-        if current_pos < len(expected_sequence) and char == expected_sequence[current_pos]:
-            # Match the next character in "python"
-            self.python_match_progress += char
-            if self.python_match_progress == expected_sequence:
-                # Complete match - we're now in a code block
+        # Check if it matches the language identifier
+        if len(self.language_match_buffer) < len(self.python_block_identifier):
+            if char == self.python_block_identifier[len(self.language_match_buffer)]:
+                self.language_match_buffer += char
+                
+                # Fully matches the language identifier
+                if self.language_match_buffer == self.python_block_identifier:
+                    # Continue reading until a newline
+                    pass  # The next character will be processed
+            elif char == '\n' and self.language_match_buffer == self.python_block_identifier:
+                # Match successful, enter code mode
                 self._enter_code_block()
+            else:
+                # Not a match - this is not the code block we're looking for
+                self.text_buffer += "```" + self.language_match_buffer + char
+                self.mode = self.Mode.TEXT
+                self.language_match_buffer = ""
         else:
-            # Not a match for "python" - treat as regular text
-            self.text_buffer += "```" + self.python_match_progress + char
-            self.mode = self.Mode.TEXT
-            self.python_match_progress = ""
-            self.skip_next_triple_backtick = True
+            # Already matched the language identifier, check the next character
+            if char == '\n' or char == ' ' or char == '\r':
+                # Valid code block start
+                self._enter_code_block()
+                if char == '\n':
+                    pass  # Do not add a newline to the code buffer
+                elif char == ' ':
+                    # Ignore the space after the language identifier
+                    pass
+            else:
+                # Not a valid code block (e.g. ```pythonscript)
+                self.text_buffer += "```" + self.language_match_buffer + char
+                self.mode = self.Mode.TEXT
+                self.language_match_buffer = ""
+        
+        return segments
     
-    def _handle_code_mode(self, char: str):
+    def _handle_code_mode(self, char: str) -> List[Segment]:
         """Handle character in CODE mode."""
         if char == '`':
-            self.mode = self.Mode.BACKTICK_COUNT
+            self.mode = self.Mode.CODE_END_CHECK
             self.backtick_count = 1
         else:
             self.code_buffer += char
+        return []
     
-    def _handle_triple_backtick(self) -> List[Segment]:
-        """Handle encountering three backticks."""
+    def _handle_code_end_check_mode(self, char: str) -> List[Segment]:
+        """Check if we're at the end of a code block."""
         segments = []
-    
-        if self.skip_next_triple_backtick:
-            self.text_buffer += "```"
-            self.skip_next_triple_backtick = False
-            self.mode = self.Mode.TEXT
-            self.backtick_count = 0
-            return segments
         
-        if self.in_code_block:
-            # End of code block
-            segments.append(Segment(SegmentType.CODE, self.code_buffer.strip()))
-            self.code_buffer = ""
-            self._exit_code_block()
+        if char == '`':
+            self.backtick_count += 1
+            if self.backtick_count == 3:
+                # Code block end
+                if self.code_buffer:
+                    segments.append(Segment(SegmentType.CODE, self.code_buffer.strip()))
+                    self.code_buffer = ""
+                self._exit_code_block()
         else:
-            # Potential start of code block - flush text and check for "python"
-            if self.text_buffer:
-                segments.append(Segment(SegmentType.TEXT, self.text_buffer))
-                self.text_buffer = ""
-            self.mode = self.Mode.PYTHON_MATCH
-            self.python_match_progress = ""
+            # Not a code block end - add backticks to the code buffer
+            self.code_buffer += "`" * self.backtick_count + char
+            self.mode = self.Mode.CODE
+            self.backtick_count = 0
         
         return segments
     
@@ -154,15 +215,10 @@ class StreamingTextParser:
         """Enter code block mode."""
         self.in_code_block = True
         self.mode = self.Mode.CODE
-        self.python_match_progress = ""
+        self.language_match_buffer = ""
     
     def _exit_code_block(self):
         """Exit code block mode."""
         self.in_code_block = False
         self.mode = self.Mode.TEXT
-        self._reset_backtick_count()
-    
-    def _reset_backtick_count(self):
-        """Reset backtick counting state."""
-        self.mode = self.Mode.CODE if self.in_code_block else self.Mode.TEXT
         self.backtick_count = 0

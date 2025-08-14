@@ -1,4 +1,4 @@
-from .prompts import DEFAULT_SYSTEM_PROMPT, NEXT_STEP_PROMPT, DEFAULT_INSTRUCTIONS, DEFAULT_AGENT_IDENTITY, DEFAULT_ADDITIONAL_CONTEXT, EXECUTION_RESULT_EXCEEDED_PROMPT
+from .prompts import DEFAULT_SYSTEM_PROMPT, NEXT_STEP_PROMPT, DEFAULT_INSTRUCTIONS, DEFAULT_AGENT_IDENTITY, DEFAULT_ADDITIONAL_CONTEXT, EXECUTION_RESULT_EXCEEDED_PROMPT, EXECUTION_ERROR_PROMPT
 from .python_runtime import PythonRuntime
 from typing import List, Dict, Any, AsyncGenerator
 from .models import Model
@@ -69,6 +69,7 @@ class EventType(Enum):
     CODE = "code"
     EXECUTION_RESULT = "execution_result"
     EXECUTION_ERROR = "execution_error"
+    EXECUTION_RESULT_EXCEEDED = "execution_result_exceeded"
     FINAL_RESPONSE = "final_response"
     MAX_STEPS_REACHED = "max_steps_reached"
 
@@ -225,6 +226,8 @@ class PyCallingAgent:
             Prevents memory bloat in long conversations. Defaults to 10.
         max_execution_result_length (int, optional): Maximum length of execution result to be fed back to the LLM.
             Prevents the agent from generating too long execution results. Defaults to 3000.
+        detailed_error_feedback (bool, optional): Whether to provide detailed error feedback to the LLM.
+            If True, the LLM will be provided with the error message from the execution. Defaults to False.
 
     Example:
         >>> def add(a: int, b: int) -> int:
@@ -252,6 +255,7 @@ class PyCallingAgent:
         python_block_identifier: str = DEFAULT_PYTHON_BLOCK_IDENTIFIER,
         messages: List[Message] = [],
         max_history: int = 10,
+        detailed_error_feedback: bool = False,
         max_execution_result_length: int = 3000,
         
     ):
@@ -266,6 +270,7 @@ class PyCallingAgent:
         self.python_block_identifier = python_block_identifier
         self.messages = messages.copy()
         self.max_history = max_history
+        self.detailed_error_feedback = detailed_error_feedback
         self.max_execution_result_length = max_execution_result_length
         self.logger = Logger(log_level)
 
@@ -359,6 +364,13 @@ class PyCallingAgent:
                 elif segment.type == SegmentType.CODE:
                     yield Event(EventType.CODE, segment.content)
         
+        final_segments = parser.flush()
+        for segment in final_segments:
+            if segment.type == SegmentType.TEXT:
+                yield Event(EventType.TEXT, segment.content)
+            elif segment.type == SegmentType.CODE:
+                yield Event(EventType.CODE, segment.content)
+
         model_response = "".join(chunks)
         # Process complete response
         async for event in self._process_model_response_streaming(model_response, context):
@@ -378,30 +390,31 @@ class PyCallingAgent:
         context.code_snippets.append(code_snippet)
         self.add_message(CodeExecutionMessage(model_response))
             
-        try:
-            self.logger.debug("Code snippet", code_snippet, "green")
-            execution_result = await self.runtime.execute(code_snippet)
-            
+        self.logger.debug("Code snippet", code_snippet, "green")
+        execution_result = await self.runtime.execute(code_snippet)
+        if execution_result.success:
             # Check if execution result is too long
-            if len(execution_result) > self.max_execution_result_length:
-                self.logger.debug("Execution result too long", f"Output length: {len(execution_result)} characters (max: {self.max_execution_result_length})", "yellow")
+            execution_result_length = len(execution_result.stdout)
+            if execution_result_length > self.max_execution_result_length:
+                self.logger.debug("Execution result too long", f"Output length: {execution_result_length} characters (max: {self.max_execution_result_length})", "yellow")
                 
                 # Tell LLM to adjust code without showing the output
-                next_prompt = EXECUTION_RESULT_EXCEEDED_PROMPT.format(output_length=len(execution_result), max_length=self.max_execution_result_length)
+                next_prompt = EXECUTION_RESULT_EXCEEDED_PROMPT.format(output_length=execution_result_length, max_length=self.max_execution_result_length)
             else:
-                self.logger.debug("Execution result", execution_result, "cyan")
-                next_prompt = NEXT_STEP_PROMPT.format(execution_result=execution_result)
-            
-            self.add_message(ExecutionResultMessage(next_prompt))
-            
-            return model_response
-        except Exception as e:
-            error_msg = str(e)
-            self.logger.debug("Code execution error", error_msg)
-            retry_prompt = f"Error: {error_msg}\nPlease fix the code and try again."
-            self.add_message(ExecutionResultMessage(retry_prompt))
+                self.logger.debug("Execution result", execution_result.stdout, "cyan")
+                next_prompt = NEXT_STEP_PROMPT.format(execution_result=execution_result.stdout)
+        else:
+            error_name = getattr(type(execution_result.error), '__name__', 'UnknownError')
+            if self.detailed_error_feedback and execution_result.stdout:
+                error_for_llm = execution_result.stdout
+            else:
+                error_for_llm = error_name + ": " + str(execution_result.error)
+            self.logger.debug("Code execution error", error_for_llm, "red")
+            next_prompt = EXECUTION_ERROR_PROMPT.format(error=error_for_llm)
 
-            return f"Execution failed: {error_msg}"
+        self.add_message(ExecutionResultMessage(next_prompt))
+        return model_response
+
 
     async def _process_model_response_streaming(self, model_response: str, 
                                             context: ExecutionContext) -> AsyncGenerator[Event, None]:
@@ -417,29 +430,35 @@ class PyCallingAgent:
         
         self.add_message(CodeExecutionMessage(model_response))
 
-        try:
-            self.logger.debug("Code snippet", code_snippet, "green")
-            execution_result = await self.runtime.execute(code_snippet)
+        self.logger.debug("Code snippet", code_snippet, "green")
+        execution_result = await self.runtime.execute(code_snippet)
+        if execution_result.success:
             # Check if execution result is too long
-            if len(execution_result) > self.max_execution_result_length:
-                self.logger.debug("Execution result too long", f"Output length: {len(execution_result)} characters (max: {self.max_execution_result_length})", "yellow")
+            execution_result_length = len(execution_result.stdout)
+            if execution_result_length > self.max_execution_result_length:
+                self.logger.debug("Execution result too long", f"Output length: {execution_result_length} characters (max: {self.max_execution_result_length})", "yellow")
                 
                 # Tell LLM to adjust code without showing the output
-                next_prompt = EXECUTION_RESULT_EXCEEDED_PROMPT.format(output_length=len(execution_result), max_length=self.max_execution_result_length)
+                next_prompt = EXECUTION_RESULT_EXCEEDED_PROMPT.format(output_length=execution_result_length, max_length=self.max_execution_result_length)
+                self.add_message(ExecutionResultMessage(next_prompt))
+                yield Event(EventType.EXECUTION_RESULT_EXCEEDED, execution_result.stdout)
             else:
-                self.logger.debug("Execution result", execution_result, "cyan")
-                next_prompt = NEXT_STEP_PROMPT.format(execution_result=execution_result)
-            
+                self.logger.debug("Execution result", execution_result.stdout, "cyan")
+                next_prompt = NEXT_STEP_PROMPT.format(execution_result=execution_result.stdout)
+                self.add_message(ExecutionResultMessage(next_prompt))
+                yield Event(EventType.EXECUTION_RESULT, execution_result.stdout)
+        else:
+            error_name = getattr(type(execution_result.error), '__name__', 'UnknownError')
+            if self.detailed_error_feedback and execution_result.stdout:
+                error_for_llm = execution_result.stdout
+            else:
+                error_for_llm = error_name + ": " + str(execution_result.error)
+            next_prompt = EXECUTION_ERROR_PROMPT.format(error=error_for_llm)
+            self.logger.debug("Code execution error", error_for_llm, "red")
             self.add_message(ExecutionResultMessage(next_prompt))
-            yield Event(EventType.EXECUTION_RESULT, execution_result)
-        except Exception as e:
-            error_msg = str(e)
-            self.logger.debug("Code execution error", error_msg)
-            retry_prompt = f"Error: {error_msg}\nPlease fix the code and try again."
-            self.add_message(ExecutionResultMessage(retry_prompt))
-            yield Event(EventType.EXECUTION_ERROR, error_msg)
+            yield Event(EventType.EXECUTION_ERROR, error_for_llm)
 
-    def _log_step(self, context: ExecutionContext) -> None:
+    def _log_step(self, context: ExecutionContext):
         """Log step execution info."""
         self.logger.debug(
             f"Step {context.total_steps}/{context.max_steps}", 
@@ -447,14 +466,14 @@ class PyCallingAgent:
             "yellow"
         )
 
-    def _initialize_conversation(self, user_query: str) -> None:
+    def _initialize_conversation(self, user_query: str):
         """Initialize the conversation with the user prompt and system prompt."""
         self._update_system_message()
         self.logger.debug("User query received", user_query, "blue")
         self.add_message(UserMessage(user_query))
 
 
-    def _update_system_message(self) -> None:
+    def _update_system_message(self):
         """Update or insert system message."""
 
         system_prompt = self.build_system_prompt()
@@ -475,13 +494,13 @@ class PyCallingAgent:
             for message in self.messages
         ]
     
-    def add_message(self, message: Message) -> None:
+    def add_message(self, message: Message):
         """Add message with automatic history management."""
         self.messages.append(message)
         self.logger.debug("History length", f"Current history length: {len(self.messages)}/{self.max_history}", "yellow")
         self._trim_history()
     
-    def _trim_history(self) -> None:
+    def _trim_history(self):
         """Trim message history if needed."""
         if len(self.messages) > self.max_history:
             # Always keep system message at index 0

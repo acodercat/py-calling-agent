@@ -13,6 +13,20 @@ class SecurityViolation(Exception):
         self.line_number = line_number
         super().__init__(message)
 
+class ExecutionResult:
+    """
+    Represents the result of code execution.
+    """
+    error: Optional[BaseException] = None
+    stdout: Optional[str] = None
+
+    def __init__(self, error: Optional[BaseException] = None, stdout: Optional[str] = None):
+        self.error = error
+        self.stdout = stdout
+
+    @property
+    def success(self):
+        return self.error is None
 
 @dataclass
 class SecurityPolicy:
@@ -199,28 +213,38 @@ class PythonExecutor:
         self._shell = InteractiveShell.instance()
         self.security_checker = CodeSecurityChecker(SECURITY_POLICIE)
         
-    def inject_into_namespace(self, name: str, value: Any) -> None:
+    def inject_into_namespace(self, name: str, value: Any):
         """Inject a value into the execution namespace."""
         self._shell.user_ns[name] = value
     
-    async def execute(self, code: str) -> str:
+    async def execute(self, code: str) -> ExecutionResult:
         """Execute code snippet with security checks."""
-        # Perform security check
-        is_safe, violations = self.security_checker.check_code(code)
-        if not is_safe:
-            violation_messages = [
-                f"Line {v.line_number}: {v}" if v.line_number else str(v)
-                for v in violations
-            ]
-            error_msg = "Security violations found:\n" + "\n".join(violation_messages)
-            raise SecurityViolation(error_msg, "multiple_violations")
-        
-        # Execute if safe
-        with capture_output() as output:
-            transformed_code = self._shell.transform_cell(code)
-            await self._shell.run_cell_async(transformed_code, transformed_cell=transformed_code)
-        
-        return output.stdout
+        try:
+            # Perform security check
+            is_safe, violations = self.security_checker.check_code(code)
+            if not is_safe:
+                violation_messages = [
+                    f"Line {v.line_number}: {v}" if v.line_number else str(v)
+                    for v in violations
+                ]
+                error_msg = "Security violations found:\n" + "\n".join(violation_messages)
+                return ExecutionResult(
+                    error=SecurityViolation(error_msg, "multiple_violations")
+                )
+            
+            # Execute if safe
+            with capture_output() as output:
+                transformed_code = self._shell.transform_cell(code)
+                result = await self._shell.run_cell_async(transformed_code, transformed_cell=transformed_code)
+
+            if result.error_before_exec:
+                return ExecutionResult(error=result.error_before_exec, stdout=output.stdout)
+            if result.error_in_exec:
+                return ExecutionResult(error=result.error_in_exec, stdout=output.stdout)
+            
+            return ExecutionResult(stdout=output.stdout)
+        except Exception as e:
+            return ExecutionResult(error=e)
     
     def get_from_namespace(self, name: str) -> Any:
         """Get a value from the execution namespace."""
@@ -231,6 +255,7 @@ class PythonExecutor:
         is_safe, violations = self.security_checker.check_code(code)
         messages = [str(v) for v in violations]
         return is_safe, messages
+
 class Variable:
     """Represents a variable in the Python runtime environment."""
     name: str
@@ -322,7 +347,7 @@ class PythonRuntime:
         self._variables[variable.name] = variable
         self._executor.inject_into_namespace(variable.name, variable.value)
 
-    async def execute(self, code: str) -> str:
+    async def execute(self, code: str) -> ExecutionResult:
         """Execute code using the executor."""
         return await self._executor.execute(code)
 
