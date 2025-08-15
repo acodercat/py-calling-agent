@@ -10,7 +10,7 @@ from .streaming_text_parser import SegmentType, StreamingTextParser
 from enum import Enum, IntEnum
 from datetime import datetime
 from .constant import DEFAULT_PYTHON_BLOCK_IDENTIFIER
-
+import traceback
 class MessageRole(str, Enum):
     SYSTEM = "system"
     USER = "user"
@@ -226,8 +226,6 @@ class PyCallingAgent:
             Prevents memory bloat in long conversations. Defaults to 10.
         max_execution_result_length (int, optional): Maximum length of execution result to be fed back to the LLM.
             Prevents the agent from generating too long execution results. Defaults to 3000.
-        detailed_error_feedback (bool, optional): Whether to provide detailed error feedback to the LLM.
-            If True, the LLM will be provided with the error message from the execution. Defaults to False.
 
     Example:
         >>> def add(a: int, b: int) -> int:
@@ -255,7 +253,6 @@ class PyCallingAgent:
         python_block_identifier: str = DEFAULT_PYTHON_BLOCK_IDENTIFIER,
         messages: List[Message] = [],
         max_history: int = 10,
-        detailed_error_feedback: bool = False,
         max_execution_result_length: int = 3000,
         
     ):
@@ -270,7 +267,6 @@ class PyCallingAgent:
         self.python_block_identifier = python_block_identifier
         self.messages = messages.copy()
         self.max_history = max_history
-        self.detailed_error_feedback = detailed_error_feedback
         self.max_execution_result_length = max_execution_result_length
         self.logger = Logger(log_level)
 
@@ -404,11 +400,13 @@ class PyCallingAgent:
                 self.logger.debug("Execution result", execution_result.stdout, "cyan")
                 next_prompt = NEXT_STEP_PROMPT.format(execution_result=execution_result.stdout)
         else:
-            error_name = getattr(type(execution_result.error), '__name__', 'UnknownError')
-            if self.detailed_error_feedback and execution_result.stdout:
-                error_for_llm = execution_result.stdout
-            else:
-                error_for_llm = error_name + ": " + str(execution_result.error)
+            error_for_llm = ''.join(traceback.format_exception(
+                type(execution_result.error), 
+                execution_result.error, 
+                execution_result.error.__traceback__,
+                chain=False,
+                limit=2
+            ))
             self.logger.debug("Code execution error", error_for_llm, "red")
             next_prompt = EXECUTION_ERROR_PROMPT.format(error=error_for_llm)
 
@@ -448,11 +446,13 @@ class PyCallingAgent:
                 self.add_message(ExecutionResultMessage(next_prompt))
                 yield Event(EventType.EXECUTION_RESULT, execution_result.stdout)
         else:
-            error_name = getattr(type(execution_result.error), '__name__', 'UnknownError')
-            if self.detailed_error_feedback and execution_result.stdout:
-                error_for_llm = execution_result.stdout
-            else:
-                error_for_llm = error_name + ": " + str(execution_result.error)
+            error_for_llm = ''.join(traceback.format_exception(
+                type(execution_result.error), 
+                execution_result.error, 
+                execution_result.error.__traceback__,
+                chain=False,
+                limit=2
+            ))
             next_prompt = EXECUTION_ERROR_PROMPT.format(error=error_for_llm)
             self.logger.debug("Code execution error", error_for_llm, "red")
             self.add_message(ExecutionResultMessage(next_prompt))
