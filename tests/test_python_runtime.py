@@ -1,5 +1,5 @@
 import pytest
-from src.py_calling_agent.python_runtime import PythonRuntime, Variable, Function
+from py_calling_agent.python_runtime import PythonRuntime, Variable, Function
 
 
 @pytest.fixture
@@ -63,28 +63,6 @@ async def test_function_usage(runtime_with_function):
     result = runtime_with_function._executor.get_from_namespace('result')
     assert result == 42
 
-
-# @pytest.mark.asyncio
-# async def test_security_blocked_import(simple_runtime):
-#     """Test security blocks dangerous imports"""
-#     result = await simple_runtime.execute("import os")
-#     assert "Security violations found" in str(result.error)
-
-
-
-# @pytest.mark.asyncio
-# async def test_security_blocked_eval(simple_runtime):
-#     """Test security blocks eval"""
-#     result = await simple_runtime.execute("eval('2+2')")
-#     assert "Security violations found" in str(result.error)
-
-
-# @pytest.mark.asyncio
-# async def test_security_blocked_open(simple_runtime):
-#     """Test security blocks file operations"""
-#     result = await simple_runtime.execute("open('test.txt')")
-#     assert "Security violations found" in str(result.error)
-
 @pytest.mark.asyncio
 async def test_multiple_executions(simple_runtime):
     """Test multiple code executions share state"""
@@ -108,10 +86,3 @@ def test_describe_variables(runtime_with_data):
     description = runtime_with_data.describe_variables()
     assert "numbers" in description
     assert "result" in description
-
-
-# @pytest.mark.asyncio
-# async def test_syntax_error(simple_runtime):
-#     """Test syntax errors are caught"""
-#     result = await simple_runtime.execute("if True")  # Missing colon
-#     assert "Syntax error" in str(result.error)

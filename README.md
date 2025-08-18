@@ -3,7 +3,7 @@
 
 [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](https://opensource.org/licenses/MIT)
 [![Python 3.11+](https://img.shields.io/badge/python-3.11+-blue.svg)](https://www.python.org/downloads/)
-[![PyPI version](https://img.shields.io/badge/pypi-0.4.0-blue.svg)](https://pypi.org/project/py-calling-agent)
+[![PyPI version](https://img.shields.io/badge/pypi-0.4.1-blue.svg)](https://pypi.org/project/py-calling-agent)
 
 PyCallingAgent is a tool-augmented agent framework that enables function-calling through LLM code generation and provides runtime state management. Unlike traditional JSON-schema approaches, it leverages LLM's inherent coding capabilities to interact with tools through a Python runtime environment, allowing direct access to execution results and runtime state.
 
@@ -200,14 +200,16 @@ async for event in agent.stream_events("Analyze this data and create a summary")
 
 ### Security Features
 
-PyCallingAgent includes built-in security to prevent dangerous code execution:
+PyCallingAgent includes rule-based security to prevent dangerous code execution:
 
 ```python
 import asyncio
 from py_calling_agent import PyCallingAgent
 from py_calling_agent.models import OpenAIServerModel
 from py_calling_agent.python_runtime import PythonRuntime
-from py_calling_agent.security_checker import SecurityChecker, SecurityLevel, CustomRule
+from py_calling_agent.security_checker import (
+    SecurityChecker, ImportRule, FunctionRule, AttributeRule, RegexRule
+)
 
 async def main():
     model = OpenAIServerModel(
@@ -216,15 +218,16 @@ async def main():
         base_url="https://api.openai.com/v1"
     )
 
-    # Configure security with different levels
-    # STRICT: Maximum security, blocks most operations
-    # STANDARD: Balanced security for general use (default)
-    # RELAXED: Minimal restrictions for trusted environments
+    # Configure security with specific rules
+    rules = [
+        ImportRule({"os", "subprocess", "sys", "socket"}),  # Block dangerous imports
+        FunctionRule({"eval", "exec", "compile", "open"}),  # Block dangerous functions
+        AttributeRule({"__globals__", "__builtins__"}),     # Block attribute access
+        RegexRule("no_print", "Block print statements", r"print\s*\(")  # Custom regex
+    ]
     
-    runtime = PythonRuntime(
-        enable_security=True,
-        security_level=SecurityLevel.STRICT
-    )
+    checker = SecurityChecker(rules)
+    runtime = PythonRuntime(security_checker=checker)
     
     agent = PyCallingAgent(model, runtime=runtime)
     
@@ -232,27 +235,7 @@ async def main():
     try:
         await agent.run("import os and list files")
     except Exception as e:
-        print(f"Blocked dangerous code: {e}")
-    
-    # Safe code will execute normally
-    response = await agent.run("Calculate 2 + 2 and store in variable result")
-    print(f"Safe calculation result: {runtime.get_variable_value('result')}")
-
-# Custom security rules
-def create_secure_runtime():
-    # Add custom rule to block print statements
-    no_print_rule = CustomRule(
-        name="no_print",
-        description="Block all print statements",
-        pattern=r"print\s*\("
-    )
-    
-    checker = SecurityChecker(
-        security_level=SecurityLevel.STANDARD,
-        custom_rules=[no_print_rule]
-    )
-    
-    return PythonRuntime(security_checker=checker)
+        print(f"Blocked: {e}")
 
 if __name__ == "__main__":
     asyncio.run(main())
@@ -263,9 +246,9 @@ if __name__ == "__main__":
 - **🤖 Code-Based Function Calling**: Leverages LLM's natural coding abilities instead of rigid JSON schemas
 - **🛡️ Secure Runtime Environment**: 
   - Inject Python objects, variables, and functions as tools
-  - AST-based security validation prevents dangerous code execution
-  - Configurable security levels (STRICT, STANDARD, RELAXED)
-  - Custom security rules for application-specific restrictions
+  - Rule-based security validation prevents dangerous code execution
+  - Flexible security rules: ImportRule, FunctionRule, AttributeRule, RegexRule
+  - Customizable security policies for different use cases
   - Access execution results and maintain state across interactions
 - **💬 Multi-Turn Conversations**: Persistent context and runtime state across multiple interactions
 - **⚡ Streaming & Async**: Real-time event streaming and full async/await support for optimal performance

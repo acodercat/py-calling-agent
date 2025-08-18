@@ -1,270 +1,193 @@
-"""Test suite for PyCallingAgent security features."""
-
 import pytest
-import asyncio
 
-from src.py_calling_agent.security_checker import (
-    SecurityChecker, SecurityLevel, SecurityError, ViolationType,
-    CustomRule, SecurityViolation, SecurityReport
+from py_calling_agent.security_checker import (
+    SecurityChecker, SecurityError, ImportRule, FunctionRule, AttributeRule, RegexRule
 )
-from src.py_calling_agent.python_runtime import PythonRuntime, PythonExecutor
+from py_calling_agent.python_runtime import PythonRuntime, PythonExecutor
 
 
 class TestSecurityChecker:
     """Test suite for SecurityChecker core functionality."""
     
     def test_security_checker_initialization(self):
-        """Test SecurityChecker initialization with different levels."""
-        # Test default initialization
-        checker = SecurityChecker()
-        assert checker.security_level == SecurityLevel.STANDARD
-        assert len(checker.rules) > 0
+        """Test SecurityChecker initialization with rules."""
+        # Test initialization with rules
+        rules = [
+            ImportRule({"os", "subprocess"}),
+            FunctionRule({"eval", "exec"})
+        ]
+        checker = SecurityChecker(rules)
+        assert len(checker.rules) == 2
         
-        # Test all security levels
-        for level in SecurityLevel:
-            level_checker = SecurityChecker(level)
-            assert level_checker.security_level == level
-            assert len(level_checker.rules) > 0
+        # Test empty initialization
+        empty_checker = SecurityChecker([])
+        assert len(empty_checker.rules) == 0
     
-    def test_invalid_initialization(self):
-        """Test SecurityChecker with invalid parameters."""
+    def test_add_rule(self):
+        """Test adding rules to SecurityChecker."""
+        checker = SecurityChecker([])
+        
+        rule = ImportRule({"os"})
+        checker.add_rule(rule)
+        assert len(checker.rules) == 1
+        
+        # Test duplicate rule name should raise error
+        duplicate_rule = ImportRule({"sys"})  # Same name "forbidden_imports"
         with pytest.raises(ValueError):
-            SecurityChecker("invalid_level")
+            checker.add_rule(duplicate_rule)
     
-    def test_dangerous_imports_detection(self):
-        """Test detection of dangerous imports across security levels."""
-        test_cases = [
-            ("import os", True),  # Should be dangerous in STRICT
-            ("import subprocess", True),  # Should be dangerous in all levels
-            ("import math", False),  # Should be safe in most levels
-            ("from os import system", True),  # Should be dangerous
-            ("import json", False),  # Depends on level
+    def test_import_rule(self):
+        """Test ImportRule detection."""
+        rule = ImportRule({"os", "subprocess"})
+        checker = SecurityChecker([rule])
+        
+        # Test forbidden imports
+        forbidden_codes = [
+            "import os",
+            "import subprocess", 
+            "from os import system",
+            "from subprocess import call"
         ]
         
-        for code, should_be_dangerous in test_cases:
-            strict_checker = SecurityChecker(SecurityLevel.STRICT)
-            report = strict_checker.check_code(code)
-            
-            if should_be_dangerous:
-                # Should find at least one violation in strict mode
-                dangerous_violations = [
-                    v for v in report.violations 
-                    if v.type == ViolationType.DANGEROUS_IMPORT
-                ]
-                # Note: Some imports might be safe even in strict mode
-                # We test the mechanism, not specific policies
-    
-    def test_dangerous_functions_detection(self):
-        """Test detection of dangerous function calls."""
-        checker = SecurityChecker(SecurityLevel.STANDARD)
+        for code in forbidden_codes:
+            violations = checker.check_code(code)
+            assert len(violations) > 0
+            assert any("import" in v.message.lower() for v in violations)
         
-        dangerous_functions = [
-            "eval('print(\"hello\")')",
+        # Test safe import
+        safe_code = "import math"
+        violations = checker.check_code(safe_code)
+        assert len(violations) == 0
+    
+    def test_function_rule(self):
+        """Test FunctionRule detection."""
+        rule = FunctionRule({"eval", "exec", "compile"})
+        checker = SecurityChecker([rule])
+        
+        # Test forbidden functions
+        forbidden_codes = [
+            "eval('print(1)')",
             "exec('x = 1')",
-            "__import__('os')",
             "compile('x=1', '<string>', 'exec')"
         ]
         
-        for code in dangerous_functions:
-            report = checker.check_code(code)
-            assert not report.is_safe, f"Code should be unsafe: {code}"
-            
-            # Should have at least one violation
-            assert len(report.violations) > 0
-            
-            # Should contain eval/exec or dangerous function violation
-            violation_types = {v.type for v in report.violations}
-            assert (
-                ViolationType.EVAL_EXEC in violation_types or
-                ViolationType.DANGEROUS_FUNCTION in violation_types
-            )
-    
-    def test_dangerous_attributes_detection(self):
-        """Test detection of dangerous attribute access."""
-        checker = SecurityChecker(SecurityLevel.STANDARD)
+        for code in forbidden_codes:
+            violations = checker.check_code(code)
+            assert len(violations) > 0
+            assert any("function" in v.message.lower() for v in violations)
         
-        # Test __globals__ access
-        globals_code = "print.__globals__"
-        report = checker.check_code(globals_code)
-        # Check if violations found (implementation may vary)
-        globals_violations = [
-            v for v in report.violations 
-            if v.type == ViolationType.DANGEROUS_ATTRIBUTE
+        # Test safe function
+        safe_code = "print('hello')"
+        violations = checker.check_code(safe_code)
+        assert len(violations) == 0
+    
+    def test_attribute_rule(self):
+        """Test AttributeRule detection."""
+        rule = AttributeRule({"__globals__", "__builtins__"})
+        checker = SecurityChecker([rule])
+        
+        # Test forbidden attribute access
+        forbidden_codes = [
+            "print.__globals__",
+            "obj.__builtins__"
         ]
         
-        # Test __builtins__ access with attribute syntax
-        builtins_code = "obj.__builtins__"
-        report2 = checker.check_code(builtins_code)
-        builtins_violations = [
-            v for v in report2.violations 
-            if v.type == ViolationType.DANGEROUS_ATTRIBUTE
-        ]
+        for code in forbidden_codes:
+            violations = checker.check_code(code)
+            assert len(violations) > 0
+            assert any("attribute" in v.message.lower() for v in violations)
         
-        # At least one should be detected
-        assert len(globals_violations) > 0 or len(builtins_violations) > 0
+        # Test safe attribute access
+        safe_code = "obj.method()"
+        violations = checker.check_code(safe_code)
+        assert len(violations) == 0
     
-    def test_different_security_levels(self):
-        """Test that different security levels have different restrictions."""
-        code = "import os"
+    def test_regex_rule(self):
+        """Test RegexRule functionality."""
+        rule = RegexRule("no_print", "Block print statements", r"print\s*\(")
+        checker = SecurityChecker([rule])
         
-        # Test with different security levels
-        strict_checker = SecurityChecker(SecurityLevel.STRICT)
-        standard_checker = SecurityChecker(SecurityLevel.STANDARD)
-        relaxed_checker = SecurityChecker(SecurityLevel.RELAXED)
-        
-        strict_report = strict_checker.check_code(code)
-        standard_report = standard_checker.check_code(code)
-        relaxed_report = relaxed_checker.check_code(code)
-        
-        # STRICT should be most restrictive
-        # STANDARD should be moderate  
-        # RELAXED should be most permissive
-        # os import should be dangerous in STRICT and STANDARD but might be ok in RELAXED
-        assert len(strict_report.violations) >= len(standard_report.violations)
-        assert len(standard_report.violations) >= len(relaxed_report.violations)
-    
-    def test_custom_rules(self):
-        """Test custom security rules functionality."""
-        custom_rule = CustomRule(
-            name="no_print",
-            description="Disallow print statements",
-            pattern=r"print\s*\("
-        )
-        
-        # Test initialization with custom rules
-        checker = SecurityChecker(custom_rules=[custom_rule])
-        
+        # Test pattern matching
         code = "print('hello world')"
-        report = checker.check_code(code)
-        assert not report.is_safe
-        custom_violations = [
-            v for v in report.violations 
-            if v.type == ViolationType.CUSTOM_RULE
-        ]
-        assert len(custom_violations) > 0
+        violations = checker.check_code(code)
+        assert len(violations) > 0
+        assert "no_print" in violations[0].message
         
-        # Test adding rule dynamically
-        checker2 = SecurityChecker()
-        checker2.add_custom_rule(custom_rule)
-        report2 = checker2.check_code(code)
-        assert not report2.is_safe
-        
-        # Verify custom rule was added
-        assert len(checker2.custom_rules) > 0
-        
-    def test_custom_rule_validation(self):
-        """Test custom rule parameter validation."""
+        # Test safe code
+        safe_code = "x = 5 + 3"
+        violations = checker.check_code(safe_code)
+        assert len(violations) == 0
+    
+    def test_regex_rule_validation(self):
+        """Test RegexRule parameter validation."""
         # Test invalid regex pattern
         with pytest.raises(ValueError):
-            CustomRule(
-                name="bad_pattern",
-                description="Bad regex",
-                pattern="[unclosed"
-            )
-        
-        # Test duplicate rule names
-        checker = SecurityChecker()
-        rule1 = CustomRule(
-            "test_rule", "Test", "test"
-        )
-        rule2 = CustomRule(
-            "test_rule", "Another Test", "test2"
-        )
-        
-        checker.add_custom_rule(rule1)
-        with pytest.raises(ValueError):
-            checker.add_custom_rule(rule2)
+            RegexRule("bad_pattern", "Bad regex", "[unclosed")
     
-    def test_eval_exec_detection(self):
-        """Test detection of eval/exec in all security levels."""
-        code = "eval('print(1)')"
+    def test_multiple_rules(self):
+        """Test SecurityChecker with multiple rules."""
+        rules = [
+            ImportRule({"os"}),
+            FunctionRule({"eval"}),
+            AttributeRule({"__globals__"}),
+            RegexRule("no_print", "Block print statements", r"print\s*\(")
+        ]
+        checker = SecurityChecker(rules)
         
-        # eval/exec should be dangerous in all levels
-        for level in SecurityLevel:
-            checker = SecurityChecker(level)
-            report = checker.check_code(code)
-            assert not report.is_safe, f"eval should be unsafe in {level.value} mode"
-            
-            # Should have eval/exec violation
-            eval_violations = [
-                v for v in report.violations 
-                if v.type == ViolationType.EVAL_EXEC
-            ]
-            assert len(eval_violations) > 0, f"Should detect eval in {level.value} mode"
+        # Test code that violates multiple rules
+        complex_code = """
+import os
+eval('print(1)')
+obj.__globals__
+print('test')
+"""
+        violations = checker.check_code(complex_code)
+        assert len(violations) >= 4  # Should catch import, eval, globals, and print
     
     def test_syntax_error_handling(self):
         """Test handling of syntax errors in code."""
-        checker = SecurityChecker()
+        checker = SecurityChecker([ImportRule({"os"})])
         
         # Code with syntax error
         bad_code = "def test(\nprint('missing parenthesis')"
-        report = checker.check_code(bad_code)
-        assert not report.is_safe
-        assert len(report.violations) >= 1
+        violations = checker.check_code(bad_code)
+        assert len(violations) >= 1
+        assert any("syntax error" in v.message.lower() for v in violations)
+    
+    def test_empty_code_handling(self):
+        """Test handling of empty code."""
+        checker = SecurityChecker([ImportRule({"os"})])
+        
+        # Test empty code
+        violations = checker.check_code("")
+        assert len(violations) >= 1
+        assert any("empty" in v.message.lower() for v in violations)
+        
+        violations = checker.check_code("   ")
+        assert len(violations) >= 1
+        assert any("empty" in v.message.lower() for v in violations)
     
     def test_safe_code_passes(self):
         """Test that safe code passes security checks."""
+        rules = [
+            ImportRule({"os", "subprocess"}),
+            FunctionRule({"eval", "exec"}),
+            AttributeRule({"__globals__"})
+        ]
+        checker = SecurityChecker(rules)
+        
         safe_codes = [
             "x = 5 + 3",
             "def hello(): return 'world'",
             "[i**2 for i in range(10)]",
             "{'key': 'value'}",
-            "import math; math.sqrt(16)",  # Depends on security level
+            "import math; math.sqrt(16)"
         ]
         
-        # Test with relaxed security (most permissive)
-        checker = SecurityChecker(SecurityLevel.RELAXED)
-        
         for code in safe_codes:
-            try:
-                report = checker.check_code(code)
-                # Note: Some code might still have violations in relaxed mode
-                # The test ensures the mechanism works
-            except Exception as e:
-                pytest.fail(f"Safe code raised exception: {code} -> {e}")
-    
-    def test_security_report_details(self):
-        """Test SecurityReport contains detailed information."""
-        checker = SecurityChecker()
-        
-        code = "import os\neval('print(1)')"
-        report = checker.check_code(code)
-        
-        # Basic report structure
-        assert isinstance(report, SecurityReport)
-        assert report.security_level == SecurityLevel.STANDARD
-        
-        # Test report properties
-        if not report.is_safe:
-            assert len(report.violations) > 0
-            assert report.summary
-            
-            # Check violation details
-            for violation in report.violations:
-                assert violation.message
-                assert isinstance(violation.type, ViolationType)
-                assert hasattr(violation, 'line_number')
-                assert str(violation)  # Test string representation
-        
-        # Test critical violations property
-        critical_count = len(report.critical_violations)
-        total_count = len(report.violations)
-        assert critical_count <= total_count
-    
-    def test_empty_code_handling(self):
-        """Test handling of empty or invalid code."""
-        checker = SecurityChecker()
-        
-        # Test empty code
-        with pytest.raises(ValueError):
-            checker.check_code("")
-            
-        with pytest.raises(ValueError):
-            checker.check_code("   ")
-            
-        # Test None code
-        with pytest.raises(ValueError):
-            checker.check_code(None)
+            violations = checker.check_code(code)
+            # Should have no violations for safe code
+            assert len(violations) == 0, f"Safe code raised violations: {code} -> {violations}"
 
 
 class TestPythonRuntimeSecurity:
@@ -273,51 +196,46 @@ class TestPythonRuntimeSecurity:
     @pytest.mark.asyncio
     async def test_runtime_with_security_enabled(self):
         """Test PythonRuntime with security checking enabled."""
-        runtime = PythonRuntime(enable_security=True, security_level=SecurityLevel.STANDARD)
+        rules = [
+            ImportRule({"os"}),
+            FunctionRule({"eval"})
+        ]
+        checker = SecurityChecker(rules)
+        runtime = PythonRuntime(security_checker=checker)
         
         # Test safe code execution
         safe_code = "x = 5 + 3"
         result = await runtime.execute(safe_code)
         assert result.success
         
-        # Test dangerous code execution
-        dangerous_code = "import os; os.system('ls')"
-        result = await runtime.execute(dangerous_code)
+        # Test forbidden code execution
+        forbidden_code = "import os; os.system('ls')"
+        result = await runtime.execute(forbidden_code)
         assert not result.success
         assert isinstance(result.error, SecurityError)
-        assert "security" in str(result.error).lower() or "violation" in str(result.error).lower()
+        assert "violations" in str(result.error).lower()
     
     @pytest.mark.asyncio
     async def test_runtime_with_security_disabled(self):
         """Test PythonRuntime with security checking disabled."""
-        runtime = PythonRuntime(enable_security=False)
+        runtime = PythonRuntime(security_checker=None)
         
-        # Dangerous code should execute when security is disabled
-        # Note: This is just for testing - in real scenarios, be very careful
+        # Any code should execute when security is disabled
         code = "result = 'security_disabled'"
         result = await runtime.execute(code)
         assert result.success
     
     @pytest.mark.asyncio
-    async def test_runtime_custom_security_rules(self):
-        """Test adding custom security rules to runtime."""
-        runtime = PythonRuntime(enable_security=True)
+    async def test_runtime_regex_rule_security_rules(self):
+        """Test adding regex security rules to runtime."""
+        # RegexRule only works on expressions, so test with a print statement
+        regex_rule = RegexRule("no_print", "Disallow print statements", r"print\s*\(")
+        checker = SecurityChecker([regex_rule])
+        runtime = PythonRuntime(security_checker=checker)
         
-        # Custom rules now need to be added at initialization
-        custom_rule = CustomRule(
-            name="no_loops",
-            description="Disallow for loops",
-            pattern=r"for\s+\w+\s+in"
-        )
-        
-        # Create runtime with custom rule
-        from src.py_calling_agent.security_checker import SecurityChecker
-        checker_with_rule = SecurityChecker(custom_rules=[custom_rule])
-        runtime_with_rule = PythonRuntime(security_checker=checker_with_rule)
-        
-        # Test that custom rule works
-        loop_code = "for i in range(10): print(i)"
-        result = await runtime_with_rule.execute(loop_code)
+        # Test that regex rule works
+        print_code = "print('hello world')"
+        result = await runtime.execute(print_code)
         assert not result.success
 
 
@@ -327,7 +245,8 @@ class TestPythonExecutorSecurity:
     @pytest.mark.asyncio
     async def test_executor_security_integration(self):
         """Test PythonExecutor with SecurityChecker."""
-        checker = SecurityChecker(SecurityLevel.STANDARD)
+        rules = [ImportRule({"os"}), FunctionRule({"eval"})]
+        checker = SecurityChecker(rules)
         executor = PythonExecutor(security_checker=checker)
         
         # Test safe code
@@ -335,9 +254,9 @@ class TestPythonExecutorSecurity:
         result = await executor.execute(safe_code)
         assert result.success
         
-        # Test dangerous code
-        dangerous_code = "eval('print(1)')"
-        result = await executor.execute(dangerous_code)
+        # Test forbidden code
+        forbidden_code = "eval('print(1)')"
+        result = await executor.execute(forbidden_code)
         assert not result.success
         assert isinstance(result.error, SecurityError)
     
@@ -354,21 +273,40 @@ class TestPythonExecutorSecurity:
 
 def test_security_error_exception():
     """Test SecurityError exception handling."""
-    checker = SecurityChecker()
-    code = "import os"
-    report = checker.check_code(code)
-    
-    error = SecurityError("Test security error", report)
+    error = SecurityError("Test security error")
     assert "Test security error" in str(error)
-    assert error.report == report
 
 
 class TestSecurityIntegration:
     """Test integration scenarios and edge cases."""
     
+    def test_comprehensive_security_setup(self):
+        """Test a comprehensive security setup."""
+        rules = [
+            ImportRule({"os", "subprocess", "sys", "shutil", "socket", "urllib"}),
+            FunctionRule({"eval", "exec", "compile", "open", "__import__", "globals", "locals"}),
+            AttributeRule({"__globals__", "__locals__", "__code__", "__builtins__"}),
+            RegexRule("no_print", "Block print statements", r"print\s*\(")
+        ]
+        checker = SecurityChecker(rules)
+        
+        # Test various forbidden operations
+        forbidden_operations = [
+            "import os",
+            "eval('1+1')",  
+            "obj.__globals__",
+            "print('test')",  # RegexRule only works on expressions
+            "open('file.txt')"
+        ]
+        
+        for operation in forbidden_operations:
+            violations = checker.check_code(operation)
+            assert len(violations) > 0, f"Should detect violation in: {operation}"
+    
     def test_complex_code_analysis(self):
         """Test analysis of complex code structures."""
-        checker = SecurityChecker(SecurityLevel.STANDARD)
+        rules = [ImportRule({"os"}), FunctionRule({"eval"})]
+        checker = SecurityChecker(rules)
         
         complex_code = """
 class MyClass:
@@ -389,60 +327,6 @@ if __name__ == "__main__":
     main()
 """
         
-        report = checker.check_code(complex_code)
-        # This should generally be safe, but may have hasattr violation
-        
-    def test_nested_security_violations(self):
-        """Test detection in nested code structures."""
-        checker = SecurityChecker(SecurityLevel.STRICT)
-        
-        nested_code = """
-def dangerous_func():
-    import os
-    return os.system('ls')
-
-class BadClass:
-    def method(self):
-        exec('print("bad")')
-
-lambda x: eval(x)
-"""
-        
-        report = checker.check_code(nested_code)
-        assert not report.is_safe
-        
-        # Should detect multiple types of violations
-        violation_types = {v.type for v in report.violations}
-        expected_types = {
-            ViolationType.DANGEROUS_IMPORT,
-            ViolationType.EVAL_EXEC,
-            ViolationType.DANGEROUS_FUNCTION
-        }
-        
-        # Should find at least some of these violation types
-        assert len(violation_types & expected_types) > 0
-
-
-def test_module_level_functions():
-    """Test module-level utility functions."""
-    # Test SecurityError properties
-    from src.py_calling_agent.security_checker import SecurityReport
-    
-    violations = [
-        SecurityViolation(
-            type=ViolationType.DANGEROUS_IMPORT,
-            message="Test violation",
-            severity="critical"
-        )
-    ]
-    
-    report = SecurityReport(violations=violations)
-    error = SecurityError("Test error", report)
-    
-    assert error.violation_count == 1
-    assert len(error.critical_violations) == 1
-    assert "1 violations" in str(error)
-
-
-if __name__ == "__main__":
-    pytest.main([__file__, "-v", "--tb=short"])
+        violations = checker.check_code(complex_code)
+        # This should be safe code with no violations
+        assert len(violations) == 0

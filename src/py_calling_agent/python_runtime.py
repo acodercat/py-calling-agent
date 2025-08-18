@@ -2,7 +2,7 @@ from typing import Callable, List, Dict, Any, Optional
 from IPython.core.interactiveshell import InteractiveShell
 from IPython.utils.capture import capture_output
 import inspect
-from .security_checker import SecurityChecker, SecurityLevel, SecurityError
+from .security_checker import SecurityChecker, SecurityError
 
 class ExecutionResult:
     """
@@ -43,16 +43,16 @@ class PythonExecutor:
             ExecutionResult with success status and output or error
         """   
         try:
-            # Perform security check if enabled
+            # Perform security check
             if self._security_checker:
-                security_report = self._security_checker.check_code(code)
-                if not security_report.is_safe:
-                    violation_details = [str(v) for v in security_report.violations]
+                violations = self._security_checker.check_code(code)
+                if len(violations) > 0:
+                    violation_details = [str(v) for v in violations]
                     error_message = (
-                        f"Code execution blocked: {security_report.summary}\n"
-                        f"Details:\n" + "\n".join(f"  - {detail}" for detail in violation_details)
+                        f"Code execution blocked: {len(violations)} violations found:\n"
+                        + "\n".join(f"  - {detail}" for detail in violation_details)
                     )
-                    security_error = SecurityError(error_message, security_report)
+                    security_error = SecurityError(error_message)
                     return ExecutionResult(error=security_error, stdout="")
             
             # Execute the code
@@ -155,8 +155,6 @@ class PythonRuntime:
         functions: Optional[List[Function]] = None,
         variables: Optional[List[Variable]] = None,
         security_checker: Optional[SecurityChecker] = None,
-        enable_security: bool = True,
-        security_level: SecurityLevel = SecurityLevel.STANDARD
     ):
         """
         Initialize runtime with executor and optional initial resources.
@@ -164,19 +162,10 @@ class PythonRuntime:
         Args:
             functions: List of functions to inject into runtime
             variables: List of variables to inject into runtime
-            security_checker: Custom security checker instance
-            enable_security: Whether to enable security checking
-            security_level: Default security level if no custom checker provided
+            security_checker: Security checker instance to use for code execution
         """
-        # Initialize security configuration
-        if enable_security:
-            if security_checker is None:
-                security_checker = SecurityChecker(security_level=security_level)
-            self._security_checker = security_checker
-        else:
-            self._security_checker = None
             
-        self._executor = PythonExecutor(security_checker=self._security_checker)
+        self._executor = PythonExecutor(security_checker=security_checker)
         self._functions: Dict[str, Function] = {}
         self._variables: Dict[str, Variable] = {}
 
