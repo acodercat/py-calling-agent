@@ -113,13 +113,17 @@ class StreamingTextParser:
         return segments
     
     def _handle_text_mode(self, char: str) -> List[Segment]:
-        """Handle character in TEXT mode."""
         if char == '`':
+            segments = []
+            if self.text_buffer:
+                segments.append(Segment(SegmentType.TEXT, self.text_buffer))
+                self.text_buffer = ""
             self.mode = self.Mode.BACKTICK_COUNT
             self.backtick_count = 1
+            return segments
         else:
-            self.text_buffer += char
-        return []
+            # Stream text character immediately
+            return [Segment(SegmentType.TEXT, char)]
     
     def _handle_backtick_count_mode(self, char: str) -> List[Segment]:
         """Handle character in BACKTICK_COUNT mode."""
