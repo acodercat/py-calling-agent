@@ -259,6 +259,7 @@ class TestPythonExecutorSecurity:
         result = await executor.execute(forbidden_code)
         assert not result.success
         assert isinstance(result.error, SecurityError)
+        assert "violations" in result.error.message.lower()
     
     @pytest.mark.asyncio
     async def test_executor_without_security(self):

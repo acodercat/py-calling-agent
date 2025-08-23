@@ -68,7 +68,7 @@ class PythonExecutor:
                         + "\n".join(f"  - {detail}" for detail in violation_details)
                     )
                     security_error = SecurityError(error_message)
-                    return ExecutionResult(error=security_error, stdout="")
+                    return ExecutionResult(error=security_error, stdout=None)
             
             # Execute the code
             with capture_output() as output:

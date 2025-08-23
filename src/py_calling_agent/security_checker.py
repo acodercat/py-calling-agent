@@ -259,5 +259,6 @@ class SecurityError(Exception):
     """Exception raised when code fails security checks."""
     
     def __init__(self, message: str):
+        self.message = message
         super().__init__(message)
     
