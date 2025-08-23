@@ -1,5 +1,5 @@
-from .prompts import DEFAULT_SYSTEM_PROMPT, NEXT_STEP_PROMPT, DEFAULT_INSTRUCTIONS, DEFAULT_AGENT_IDENTITY, DEFAULT_ADDITIONAL_CONTEXT, EXECUTION_RESULT_EXCEEDED_PROMPT, EXECUTION_ERROR_PROMPT
-from .python_runtime import PythonRuntime
+from .prompts import DEFAULT_SYSTEM_PROMPT, EXECUTION_OUTPUT_PROMPT, DEFAULT_INSTRUCTIONS, DEFAULT_AGENT_IDENTITY, DEFAULT_ADDITIONAL_CONTEXT, EXECUTION_OUTPUT_EXCEEDED_PROMPT, SECURITY_ERROR_PROMPT
+from .python_runtime import PythonRuntime, SecurityError
 from typing import List, Dict, Any, AsyncGenerator
 from .models import Model
 from rich.console import Console
@@ -67,11 +67,12 @@ class LogLevel(IntEnum):
 class EventType(Enum):
     TEXT = "text"
     CODE = "code"
-    EXECUTION_RESULT = "execution_result"
+    EXECUTION_OUTPUT = "execution_output"
     EXECUTION_ERROR = "execution_error"
-    EXECUTION_RESULT_EXCEEDED = "execution_result_exceeded"
+    EXECUTION_OUTPUT_EXCEEDED = "execution_output_exceeded"
     FINAL_RESPONSE = "final_response"
     MAX_STEPS_REACHED = "max_steps_reached"
+    SECURITY_ERROR = "security_error"
 
 class Logger:
     """
@@ -388,31 +389,25 @@ class PyCallingAgent:
             
         self.logger.debug("Code snippet", code_snippet, "green")
         execution_result = await self.runtime.execute(code_snippet)
-        if execution_result.success:
-            # Check if execution result is too long
-            execution_result_length = len(execution_result.stdout)
-            if execution_result_length > self.max_execution_result_length:
-                self.logger.debug("Execution result too long", f"Output length: {execution_result_length} characters (max: {self.max_execution_result_length})", "yellow")
-                
-                # Tell LLM to adjust code without showing the output
-                next_prompt = EXECUTION_RESULT_EXCEEDED_PROMPT.format(output_length=execution_result_length, max_length=self.max_execution_result_length)
-            else:
-                self.logger.debug("Execution result", execution_result.stdout, "cyan")
-                next_prompt = NEXT_STEP_PROMPT.format(execution_result=execution_result.stdout)
+
+        if not execution_result.success and isinstance(execution_result.error, SecurityError):
+            execution_error = execution_result.error.message
+            self.logger.debug("Security error", execution_error, "red")
+            next_prompt = SECURITY_ERROR_PROMPT.format(error=execution_error)
         else:
-            error_for_llm = ''.join(traceback.format_exception(
-                type(execution_result.error), 
-                execution_result.error, 
-                execution_result.error.__traceback__,
-                chain=False,
-                limit=2
-            ))
-            self.logger.debug("Code execution error", error_for_llm, "red")
-            next_prompt = EXECUTION_ERROR_PROMPT.format(error=error_for_llm)
+            stdout_length = len(execution_result.stdout)
+            if stdout_length > self.max_execution_result_length:
+                self.logger.debug("Execution output too long", f"Output length: {stdout_length} characters (max: {self.max_execution_result_length})", "yellow")
+                next_prompt = EXECUTION_OUTPUT_EXCEEDED_PROMPT.format(output_length=stdout_length, max_length=self.max_execution_result_length)
+            else:
+                next_prompt = EXECUTION_OUTPUT_PROMPT.format(execution_output=execution_result.stdout)
+                if execution_result.success:
+                    self.logger.debug("Execution output", execution_result.stdout, "cyan")
+                else:
+                    self.logger.debug("Execution output with error", execution_result.stdout, "red")
 
         self.add_message(ExecutionResultMessage(next_prompt))
         return model_response
-
 
     async def _process_model_response_streaming(self, model_response: str, 
                                             context: ExecutionContext) -> AsyncGenerator[Event, None]:
@@ -430,34 +425,31 @@ class PyCallingAgent:
 
         self.logger.debug("Code snippet", code_snippet, "green")
         execution_result = await self.runtime.execute(code_snippet)
-        if execution_result.success:
-            # Check if execution result is too long
-            execution_result_length = len(execution_result.stdout)
-            if execution_result_length > self.max_execution_result_length:
-                self.logger.debug("Execution result too long", f"Output length: {execution_result_length} characters (max: {self.max_execution_result_length})", "yellow")
-                
-                # Tell LLM to adjust code without showing the output
-                next_prompt = EXECUTION_RESULT_EXCEEDED_PROMPT.format(output_length=execution_result_length, max_length=self.max_execution_result_length)
-                self.add_message(ExecutionResultMessage(next_prompt))
-                yield Event(EventType.EXECUTION_RESULT_EXCEEDED, execution_result.stdout)
-            else:
-                self.logger.debug("Execution result", execution_result.stdout, "cyan")
-                next_prompt = NEXT_STEP_PROMPT.format(execution_result=execution_result.stdout)
-                self.add_message(ExecutionResultMessage(next_prompt))
-                yield Event(EventType.EXECUTION_RESULT, execution_result.stdout)
-        else:
-            error_for_llm = ''.join(traceback.format_exception(
-                type(execution_result.error), 
-                execution_result.error, 
-                execution_result.error.__traceback__,
-                chain=False,
-                limit=2
-            ))
-            next_prompt = EXECUTION_ERROR_PROMPT.format(error=error_for_llm)
-            self.logger.debug("Code execution error", error_for_llm, "red")
+    
+        if not execution_result.success and isinstance(execution_result.error, SecurityError):
+            execution_error = execution_result.error.message
+            self.logger.debug("Security error", execution_error, "red")
+            next_prompt = SECURITY_ERROR_PROMPT.format(error=execution_error)
             self.add_message(ExecutionResultMessage(next_prompt))
-            yield Event(EventType.EXECUTION_ERROR, error_for_llm)
-
+            yield Event(EventType.SECURITY_ERROR, execution_error)
+        else:
+            stdout_length = len(execution_result.stdout)
+            if stdout_length > self.max_execution_result_length:
+                self.logger.debug("Execution output too long", f"Output length: {stdout_length} characters (max: {self.max_execution_result_length})", "yellow")
+                
+                next_prompt = EXECUTION_OUTPUT_EXCEEDED_PROMPT.format(output_length=stdout_length, max_length=self.max_execution_result_length)
+                self.add_message(ExecutionResultMessage(next_prompt))
+                yield Event(EventType.EXECUTION_OUTPUT_EXCEEDED, execution_result.stdout)
+            else:
+                next_prompt = EXECUTION_OUTPUT_PROMPT.format(execution_output=execution_result.stdout)
+                self.add_message(ExecutionResultMessage(next_prompt))
+                if execution_result.success:
+                    self.logger.debug("Execution output", execution_result.stdout, "cyan")
+                    yield Event(EventType.EXECUTION_OUTPUT, execution_result.stdout)
+                else:
+                    self.logger.debug("Execution output with error", execution_result.stdout, "red")
+                    yield Event(EventType.EXECUTION_ERROR, execution_result.stdout)
+                
     def _log_step(self, context: ExecutionContext):
         """Log step execution info."""
         self.logger.debug(

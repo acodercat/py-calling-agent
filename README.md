@@ -3,7 +3,7 @@
 
 [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](https://opensource.org/licenses/MIT)
 [![Python 3.11+](https://img.shields.io/badge/python-3.11+-blue.svg)](https://www.python.org/downloads/)
-[![PyPI version](https://img.shields.io/badge/pypi-0.4.2-blue.svg)](https://pypi.org/project/py-calling-agent)
+[![PyPI version](https://img.shields.io/badge/pypi-0.4.3-blue.svg)](https://pypi.org/project/py-calling-agent)
 
 PyCallingAgent is a tool-augmented agent framework that enables function-calling through LLM code generation and provides runtime state management. Unlike traditional JSON-schema approaches, it leverages LLM's inherent coding capabilities to interact with tools through a Python runtime environment, allowing direct access to execution results and runtime state.
 

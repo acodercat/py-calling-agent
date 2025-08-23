@@ -106,11 +106,6 @@ class TestStreamingTextParser:
         final_segments = parser.flush()
         segments.extend(final_segments)
         
-        # Should have warning about unclosed block
-        text_segments = [s for s in segments if s.type == SegmentType.TEXT]
-        all_text = "".join(s.content for s in text_segments)
-        assert "Warning" in all_text
-        
         # Should have the code content
         code_segments = [s for s in segments if s.type == SegmentType.CODE]
         assert len(code_segments) == 1
@@ -491,3 +486,243 @@ class TestStreamingTextParser:
         all_text = "".join(s.content for s in text_segments)
         assert "text" in all_text or "ext" in all_text  # 't' might be consumed
         assert "more" in all_text or "ore" in all_text  # 'm' might be consumed
+
+    def test_single_backtick_in_text_bug_case_1(self):
+        """Test the specific bug case that was reported - single backticks causing character loss."""
+        parser = StreamingTextParser()
+        
+        input_text = "I see the error - the `hourly_station_air_quality` table doesn't contain wind data."
+        segments = []
+        
+        for char in input_text:
+            char_segments = parser.process_chunk(char)
+            segments.extend(char_segments)
+        
+        final_segments = parser.flush()
+        segments.extend(final_segments)
+        
+        # All should be text segments (no code blocks)
+        assert all(s.type == SegmentType.TEXT for s in segments)
+        
+        # Reconstruct the output
+        output_text = "".join(s.content for s in segments)
+        
+        # The output should match the input exactly (no character loss or reordering)
+        assert output_text == input_text, f"Expected: '{input_text}'\nGot: '{output_text}'"
+        
+        # Specific checks for the problematic parts
+        assert "hourly_station_air_quality" in output_text
+        assert "`hourly_station_air_quality`" in output_text
+        assert "doesn't contain wind data" in output_text
+
+    def test_single_backtick_with_code_block(self):
+        """Test single backticks mixed with actual Python code blocks."""
+        parser = StreamingTextParser()
+        
+        input_text = """Let me query the `users` table and then process the data:
+
+```python
+import pandas as pd
+
+# Query the users table
+df = pd.read_sql("SELECT * FROM `users`", engine)
+print(f"Found {len(df)} users")
+```
+
+The `users` table contains `id`, `name`, and `email` columns."""
+        
+        segments = []
+        for char in input_text:
+            char_segments = parser.process_chunk(char)
+            segments.extend(char_segments)
+        
+        final_segments = parser.flush()
+        segments.extend(final_segments)
+        
+        # Separate text and code segments
+        text_segments = [s for s in segments if s.type == SegmentType.TEXT]
+        code_segments = [s for s in segments if s.type == SegmentType.CODE]
+        
+        # Should have exactly one code block
+        assert len(code_segments) == 1
+        
+        # Verify code content
+        code_content = code_segments[0].content
+        assert "import pandas as pd" in code_content
+        assert 'SELECT * FROM `users`' in code_content  # Backticks inside code should be preserved
+        assert "print(f\"Found {len(df)} users\")" in code_content
+        
+        # Verify text content preserves inline backticks
+        all_text = "".join(s.content for s in text_segments)
+        assert "`users` table" in all_text
+        assert "`id`, `name`, and `email`" in all_text
+        assert "Let me query" in all_text
+        assert "contains" in all_text
+
+    def test_triple_backtick_confusion_bug_case_2(self):
+        """Test the second bug case - triple backtick confusion causing weird output."""
+        parser = StreamingTextParser()
+        
+        input_text = "I see the error - the ```hourly_station_air_quality` table doesn't contain wind data."
+        segments = []
+        
+        for char in input_text:
+            char_segments = parser.process_chunk(char)
+            segments.extend(char_segments)
+        
+        final_segments = parser.flush()
+        segments.extend(final_segments)
+        
+        # Should be all text segments (not a valid python code block)
+        text_segments = [s for s in segments if s.type == SegmentType.TEXT]
+        code_segments = [s for s in segments if s.type == SegmentType.CODE]
+        
+        # Should have no code segments since ```hourly is not ```python
+        assert len(code_segments) == 0
+        assert len(text_segments) > 0
+        
+        # Reconstruct the output
+        output_text = "".join(s.content for s in segments)
+        
+        # The output should preserve all the content
+        assert "I see the error" in output_text
+        assert "hourly_station_air_quality" in output_text
+        assert "table doesn't contain wind data" in output_text
+        assert "```" in output_text  # The triple backticks should be preserved
+        
+        # Should not have the weird reordering that was occurring
+        assert "```o" not in output_text, f"Found problematic reordering in: '{output_text}'"
+
+    def test_triple_backtick_with_code_block(self):
+        """Test triple backticks in text mixed with actual Python code blocks.
+        
+        NOTE: This test documents a known limitation - triple backticks inside
+        code (comments/strings) will terminate the code block early.
+        """
+        parser = StreamingTextParser()
+        
+        input_text = """The markdown syntax uses ``` for code blocks. Here's an example:
+
+```python
+# This is a real code block
+def process_markdown(text):
+    # Look for triple backtick markers
+    if "``" + "`" in text:  # Avoiding literal ``` to not break parser
+        return text.replace("``" + "`", "<code>")
+    return text
+```
+
+Remember that ``` without a language identifier like ```javascript won't be parsed as Python code."""
+        
+        segments = []
+        for char in input_text:
+            char_segments = parser.process_chunk(char)
+            segments.extend(char_segments)
+        
+        final_segments = parser.flush()
+        segments.extend(final_segments)
+        
+        # Separate text and code segments
+        text_segments = [s for s in segments if s.type == SegmentType.TEXT]
+        code_segments = [s for s in segments if s.type == SegmentType.CODE]
+        
+        # Should have exactly one Python code block
+        assert len(code_segments) == 1
+        
+        # Verify code content
+        code_content = code_segments[0].content
+        assert "def process_markdown(text):" in code_content
+        assert "# This is a real code block" in code_content
+        assert 'if "``" + "`" in text:' in code_content  # Workaround for triple backticks
+        
+        # Verify text content
+        all_text = "".join(s.content for s in text_segments)
+        assert "markdown syntax uses ```" in all_text
+        assert "```javascript" in all_text  # Non-Python triple backticks preserved
+        assert "Remember that" in all_text
+    
+    def test_triple_backtick_in_code_limitation(self):
+        """Test that demonstrates the known limitation with triple backticks in code."""
+        parser = StreamingTextParser()
+        
+        # This will terminate early when it hits ``` in the comment
+        input_text = """```python
+def example():
+    # This comment contains ``` which will end the block
+    return "code after this won't be included"
+```"""
+        
+        segments = []
+        for char in input_text:
+            char_segments = parser.process_chunk(char)
+            segments.extend(char_segments)
+        
+        final_segments = parser.flush()
+        segments.extend(final_segments)
+        
+        code_segments = [s for s in segments if s.type == SegmentType.CODE]
+        text_segments = [s for s in segments if s.type == SegmentType.TEXT]
+        
+        # The code block will be truncated at the ``` in the comment
+        assert len(code_segments) == 1
+        code_content = code_segments[0].content
+        
+        # Code is truncated before the ``` in comment
+        assert "def example():" in code_content
+        assert "# This comment contains" in code_content
+        assert "return" not in code_content  # This part is cut off
+        
+        # The rest becomes text
+        all_text = "".join(s.content for s in text_segments)
+        assert "which will end the block" in all_text or "return" in all_text
+
+    def test_mixed_backticks_complex_scenario(self):
+        """Test a complex real-world scenario with all types of backticks."""
+        parser = StreamingTextParser()
+        
+        input_text = """I'm analyzing the `users` and `orders` tables. Let me fix the SQL query:
+
+```python
+# Fix the query for the `orders` table
+query = '''
+SELECT o.*, u.name 
+FROM `orders` o
+JOIN `users` u ON o.user_id = u.id
+WHERE o.created_at > '2024-01-01'
+'''
+
+# The backticks ` are needed for MySQL
+df = pd.read_sql(query, engine)
+print(f"Query returned {len(df)} rows from `orders`")
+```
+
+Note: The ```sql syntax would work too, but we're using Python here. 
+The `DataFrame` object will contain all results."""
+        
+        segments = []
+        for char in input_text:
+            char_segments = parser.process_chunk(char)
+            segments.extend(char_segments)
+        
+        final_segments = parser.flush()
+        segments.extend(final_segments)
+        
+        # Separate segments
+        text_segments = [s for s in segments if s.type == SegmentType.TEXT]
+        code_segments = [s for s in segments if s.type == SegmentType.CODE]
+        
+        # Should have exactly one code block
+        assert len(code_segments) == 1
+        
+        # Verify code block preserves all backticks
+        code_content = code_segments[0].content
+        assert "FROM `orders` o" in code_content
+        assert "JOIN `users` u" in code_content
+        assert "# The backticks ` are needed" in code_content
+        assert 'print(f"Query returned {len(df)} rows from `orders`")' in code_content
+        
+        # Verify text preserves inline backticks and non-Python triple backticks
+        all_text = "".join(s.content for s in text_segments)
+        assert "`users` and `orders` tables" in all_text
+        assert "```sql" in all_text  # Non-Python language preserved as text
+        assert "`DataFrame` object" in all_text

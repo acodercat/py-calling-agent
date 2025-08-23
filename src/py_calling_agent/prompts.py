@@ -63,10 +63,12 @@ DEFAULT_SYSTEM_PROMPT = """
 current time: {current_time}
 
 You have access to the following Python functions and variables:
-Functions:
+<functions>
 {functions}
-Variables:
+</functions>
+<variables>
 {variables}
+</variables>
 
 You must follow the following instructions:
 {instructions}
@@ -77,19 +79,21 @@ You can refer to the following additional context:
 You are now being connected with a person.
 """
 
-NEXT_STEP_PROMPT = """
-<execution_result>
-{execution_result}
-</execution_result>
+EXECUTION_OUTPUT_PROMPT = """
+<execution_output>
+{execution_output}
+</execution_output>
 IMPORTANT CONTEXT REMINDER:
-- Based on this result, should we continue with more operations? 
+- Based on this output, should we continue with more operations? 
+- If the output includes an error, please review the error carefully and modify your code to fix the error if needed.
 - If yes, provide the next code block. If no, provide the final answer (not as a code block).
 - You are in the SAME Jupyter-like session. All variables from your previous code blocks are still available and can be accessed directly by name.
 - You DO NOT need to use locals(), globals(), or any special methods to access them.
 - Think of this exactly like working in Jupyter: when you create a variable in cell 1, you can simply use it by name in cell 2, 3, 4, etc.
 """
 
-EXECUTION_RESULT_EXCEEDED_PROMPT = """
+
+EXECUTION_OUTPUT_EXCEEDED_PROMPT = """
 The code execution generated {output_length} characters of output, which exceeds the maximum limit of {max_length} characters.
 Please modify your code to:
 1. Avoid printing large datasets or lengthy content
@@ -97,10 +101,11 @@ Please modify your code to:
 3. Print only essential information needed for the task
 """
 
-EXECUTION_ERROR_PROMPT = """
-The code execution generated an error: 
-<execution_error>
+SECURITY_ERROR_PROMPT = """
+The code execution generated a security error:
+<security_error>
 {error}
-</execution_error>
-Please review the error carefully and modify your code to fix the error.
+</security_error>
+For security reasons, the code execution was blocked.
+Please review the error carefully and modify your code to adjust the code to avoid the security error.
 """

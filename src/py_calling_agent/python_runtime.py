@@ -3,6 +3,7 @@ from IPython.core.interactiveshell import InteractiveShell
 from IPython.utils.capture import capture_output
 import inspect
 from .security_checker import SecurityChecker, SecurityError
+from traitlets.config import Config
 
 class ExecutionResult:
     """
@@ -26,7 +27,21 @@ class PythonExecutor:
 
     def __init__(self, security_checker: Optional[SecurityChecker] = None):
         """Initialize IPython shell for code execution."""
-        self._shell = InteractiveShell.instance()
+        
+        config = Config()
+        config.InteractiveShell.cache_size = 0 
+        config.InteractiveShell.history_length = 0
+        config.InteractiveShell.automagic = False
+        config.InteractiveShell.separate_in = ''
+        config.InteractiveShell.separate_out = ''
+        config.InteractiveShell.separate_out2 = ''
+        config.InteractiveShell.autocall = 0
+        config.InteractiveShell.colors = 'nocolor'
+        config.InteractiveShell.xmode = 'Minimal'
+        config.InteractiveShell.quiet = True
+        config.InteractiveShell.autoindent = False
+
+        self._shell = InteractiveShell(config=config)
         self._security_checker = security_checker
         
     def inject_into_namespace(self, name: str, value: Any):
@@ -86,6 +101,12 @@ class PythonExecutor:
     def get_from_namespace(self, name: str) -> Any:
         """Get a value from the execution namespace."""
         return self._shell.user_ns.get(name)
+    
+    def reset(self):
+        """Reset the shell"""
+        self._shell.reset()
+        import gc
+        gc.collect()
 
 class Variable:
     """Represents a variable in the Python runtime environment."""
@@ -152,8 +173,8 @@ class PythonRuntime:
     """
     def __init__(
         self,
-        functions: Optional[List[Function]] = None,
-        variables: Optional[List[Variable]] = None,
+        functions: List[Function] = [],
+        variables: List[Variable] = [],
         security_checker: Optional[SecurityChecker] = None,
     ):
         """
@@ -169,21 +190,23 @@ class PythonRuntime:
         self._functions: Dict[str, Function] = {}
         self._variables: Dict[str, Variable] = {}
 
-        if functions:
-            for function in functions:
-                self.inject_function(function)
-            
-        if variables:
-            for variable in variables:
-                self.inject_variable(variable)
+        for function in functions:
+            self.inject_function(function)
+        
+        for variable in variables:
+            self.inject_variable(variable)
 
     def inject_function(self, function: Function):
         """Inject a function in both metadata and execution namespace."""
+        if function.name in self._functions:
+            raise ValueError(f"Function '{function.name}' already exists")
         self._functions[function.name] = function
         self._executor.inject_into_namespace(function.name, function.func)
     
     def inject_variable(self, variable: Variable):
         """Inject a variable in both metadata and execution namespace."""
+        if variable.name in self._variables:
+            raise ValueError(f"Variable '{variable.name}' already exists")
         self._variables[variable.name] = variable
         self._executor.inject_into_namespace(variable.name, variable.value)
 
@@ -219,3 +242,8 @@ class PythonRuntime:
         
         return "\n".join(descriptions)
     
+    def reset(self):
+        """Reset the runtime."""
+        self._executor.reset()
+        self._functions.clear()
+        self._variables.clear()

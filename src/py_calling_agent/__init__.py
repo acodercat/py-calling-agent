@@ -1,7 +1,7 @@
-from py_calling_agent.agent import PyCallingAgent, Message, MessageRole, LogLevel, Logger, EventType
-from py_calling_agent.models import Model, OpenAIServerModel, LiteLLMModel
-from py_calling_agent.python_runtime import PythonRuntime
-from py_calling_agent.security_checker import SecurityChecker, SecurityError, SecurityViolation, SecurityRule, ImportRule, FunctionRule, AttributeRule, RegexRule
+from .agent import PyCallingAgent, Message, MessageRole, LogLevel, Logger, EventType
+from .models import Model, OpenAIServerModel, LiteLLMModel
+from .python_runtime import PythonRuntime
+from .security_checker import SecurityChecker, SecurityError, SecurityViolation, SecurityRule, ImportRule, FunctionRule, AttributeRule, RegexRule
 
 __all__ = [
     "PyCallingAgent",
